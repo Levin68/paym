@@ -1,4 +1,202 @@
-ustify-content: space-between;
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Paym · QRIS Payment</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    />
+
+    <style>
+      :root {
+        --bg: #020617;
+        --bg-card: rgba(15, 23, 42, 0.95);
+        --fg: #e5e7eb;
+        --fg-soft: #9ca3af;
+        --accent: #22c55e;
+        --accent-blue: #38bdf8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont,
+          'Segoe UI', sans-serif;
+        background: radial-gradient(circle at top, #1e293b 0, #020617 50%, #000 100%);
+        color: var(--fg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+
+      .shell {
+        width: 100%;
+        max-width: 960px;
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+        gap: 18px;
+      }
+
+      @media (max-width: 768px) {
+        .shell {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+
+      .card,
+      .qr-card {
+        background: var(--bg-card);
+        border-radius: 20px;
+        padding: 22px 20px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        box-shadow: 0 22px 60px rgba(15, 23, 42, 0.9);
+      }
+
+      .header-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+
+      h1 {
+        font-size: 1.2rem;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+      }
+
+      .logo-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #e5e7eb;
+        font-size: 16px;
+      }
+
+      .env-pill {
+        font-size: 0.72rem;
+        padding: 4px 9px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        color: var(--fg-soft);
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .env-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #22c55e;
+        box-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
+      }
+
+      .sub {
+        color: var(--fg-soft);
+        font-size: 0.83rem;
+        margin-bottom: 16px;
+      }
+
+      .section-title {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--fg-soft);
+        margin-bottom: 6px;
+      }
+
+      label {
+        font-size: 0.86rem;
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      .input-group {
+        margin-bottom: 12px;
+      }
+
+      input {
+        width: 100%;
+        padding: 9px 11px;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        background: rgba(15, 23, 42, 0.9);
+        color: var(--fg);
+        outline: none;
+        font-size: 0.9rem;
+      }
+
+      input:focus {
+        border-color: var(--accent-blue);
+        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.5);
+      }
+
+      .tiny-hint {
+        font-size: 0.75rem;
+        color: var(--fg-soft);
+        margin-top: 3px;
+      }
+
+      button {
+        margin-top: 14px;
+        width: 100%;
+        padding: 11px 14px;
+        border-radius: 999px;
+        border: none;
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: #ecfdf5;
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        box-shadow: 0 18px 32px rgba(21, 128, 61, 0.5);
+        transition: transform 0.08s ease, box-shadow 0.08s ease,
+          filter 0.08s ease;
+      }
+
+      button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        filter: brightness(1.03);
+        box-shadow: 0 22px 40px rgba(21, 128, 61, 0.7);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+        box-shadow: none;
+      }
+
+      button svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .footer {
+        margin-top: 18px;
+        font-size: 0.75rem;
+        color: var(--fg-soft);
+        display: flex;
+        justify-content: space-between;
         gap: 12px;
         align-items: center;
       }
@@ -9,38 +207,6 @@ ustify-content: space-between;
         border-radius: 6px;
         background: rgba(15, 23, 42, 0.9);
         border: 1px solid rgba(31, 41, 55, 0.8);
-      }
-
-      .qr-card {
-        background: radial-gradient(circle at top, #172554 0, #020617 45%, #000 100%);
-        border-radius: 20px;
-        border: 1px solid rgba(148, 163, 184, 0.4);
-        padding: 18px 16px 16px;
-        box-shadow: 0 22px 55px rgba(15, 23, 42, 0.9);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        position: relative;
-        overflow: hidden;
-      }
-
-      .qr-card::before {
-        content: '';
-        position: absolute;
-        inset: -40px;
-        background: radial-gradient(
-          circle at bottom right,
-          rgba(34, 197, 94, 0.18),
-          transparent 60%
-        );
-        opacity: 0.85;
-        pointer-events: none;
-      }
-
-      .qr-card-inner {
-        position: relative;
-        z-index: 1;
-        width: 100%;
       }
 
       .qr-header-row {
@@ -63,17 +229,8 @@ ustify-content: space-between;
         font-size: 0.7rem;
         padding: 2px 7px;
         border-radius: 999px;
-        background: rgba(15, 23, 42, 0.85);
-        border: 1px solid rgba(148, 163, 184, 0.4);
-        color: var(--fg-soft);
-      }
-
-      .qr-theme-pill {
-        font-size: 0.75rem;
-        padding: 3px 9px;
-        border-radius: 999px;
         background: rgba(15, 23, 42, 0.9);
-        border: 1px solid rgba(148, 163, 184, 0.35);
+        border: 1px solid rgba(148, 163, 184, 0.4);
         color: var(--fg-soft);
       }
 
@@ -104,8 +261,10 @@ ustify-content: space-between;
         justify-content: center;
         font-size: 0.8rem;
         color: var(--fg-soft);
-        background: rgba(15, 23, 42, 0.8);
+        background: rgba(15, 23, 42, 0.85);
         margin: 0 auto;
+        padding: 0 10px;
+        text-align: center;
       }
 
       .info {
@@ -122,19 +281,10 @@ ustify-content: space-between;
         font-size: 0.78rem;
       }
 
-      .info-label {
-        color: var(--fg-soft);
-      }
-
       .info-value {
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
           'Liberation Mono', 'Courier New', monospace;
         font-size: 0.8rem;
-      }
-
-      code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-          'Liberation Mono', 'Courier New', monospace;
       }
 
       .amount-highlight {
@@ -163,12 +313,14 @@ ustify-content: space-between;
         border: 1px solid rgba(148, 163, 184, 0.5);
         color: var(--fg-soft);
       }
+
       .status span.badge-paid {
         background: rgba(22, 163, 74, 0.95);
         border: 1px solid rgba(22, 163, 74, 1);
         color: #ecfdf5;
         box-shadow: 0 0 18px rgba(34, 197, 94, 0.7);
       }
+
       .status span.badge-error {
         background: rgba(220, 38, 38, 0.95);
         border: 1px solid rgba(248, 113, 113, 1);
@@ -206,7 +358,7 @@ ustify-content: space-between;
   </head>
   <body>
     <div class="shell">
-      <!-- LEFT: FORM -->
+      <!-- KIRI: FORM -->
       <div class="card">
         <div class="card-inner">
           <div class="header-row">
@@ -221,8 +373,8 @@ ustify-content: space-between;
           </div>
 
           <div class="sub">
-            Masukkan nominal, pilih tema, lalu sistem akan generate QRIS dan
-            auto-polling status pembayaran dari endpoint backend.
+            Masukkan nominal, lalu sistem akan generate QRIS dan auto-polling
+            status pembayaran dari endpoint backend.
           </div>
 
           <div class="section-title">Pengaturan transaksi</div>
@@ -239,20 +391,6 @@ ustify-content: space-between;
             <div class="tiny-hint">
               Nominal dikirim ke API AutoFT sebagai
               <code>amount</code>.
-            </div>
-          </div>
-
-          <div class="row">
-            <div class="input-group">
-              <label for="theme">Tema QRIS</label>
-              <select id="theme">
-                <option value="theme1">Theme 1 · Biru</option>
-                <option value="theme2">Theme 2 · Meta Hijau</option>
-              </select>
-              <div class="tiny-hint">
-                Sama seperti contoh di README
-                <code>autoft-qris</code>.
-              </div>
             </div>
           </div>
 
@@ -276,12 +414,12 @@ ustify-content: space-between;
               Frontend polling setiap ±3 detik ke
               <code>GET /api/pay-status</code>.
             </span>
-            <span>Ref & status real-time bakal tampil di panel kanan.</span>
+            <span>Ref & status real-time tampil di panel kanan.</span>
           </div>
         </div>
       </div>
 
-      <!-- RIGHT: QR + STATUS -->
+      <!-- KANAN: QR + STATUS -->
       <div class="qr-card">
         <div class="qr-card-inner">
           <div class="qr-header-row">
@@ -289,7 +427,6 @@ ustify-content: space-between;
               <span>QRIS Active Session</span>
               <span class="qr-title-pill">Realtime</span>
             </div>
-            <span class="qr-theme-pill" id="theme-label">Theme: —</span>
           </div>
 
           <div class="qr-wrapper" id="qr-section" style="display: none">
@@ -305,11 +442,11 @@ ustify-content: space-between;
 
           <div class="info">
             <div class="info-row">
-              <span class="info-label">Ref</span>
+              <span>Ref</span>
               <span class="info-value"><code id="ref-text">—</code></span>
             </div>
             <div class="info-row">
-              <span class="info-label">Nominal</span>
+              <span>Nominal</span>
               <span class="info-value amount-highlight"
                 ><span id="amount-text">—</span></span
               >
@@ -317,45 +454,15 @@ ustify-content: space-between;
           </div>
 
           <div class="status" id="status-box">
-            <!-- script.js akan isi badge di sini -->
+            <!-- diisi script.js -->
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Script frontend -->
     <script src="js/script.js"></script>
-    <script>
-      // Tambahan kecil supaya label tema di kanan ikut berubah:
-      document.addEventListener('DOMContentLoaded', () => {
-        const themeSelect = document.getElementById('theme');
-        const themeLabel = document.getElementById('theme-label');
-        const qrSection = document.getElementById('qr-section');
-        const qrPlaceholder = document.getElementById('qr-placeholder');
-
-        function updateThemeLabel() {
-          const t = themeSelect.value;
-          themeLabel.textContent =
-            t === 'theme2' ? 'Theme: Meta Hijau' : 'Theme: Default Biru';
-        }
-        updateThemeLabel();
-        themeSelect.addEventListener('change', updateThemeLabel);
-
-        // Sinkron dengan script.js: ketika ada QR, sembunyikan placeholder
-        const origSetStatus = window.__setStatusFromHTML || null;
-        window.__hidePlaceholderQR = function () {
-          qrPlaceholder.style.display = 'none';
-          qrSection.style.display = 'block';
-        };
-
-        // Hook kecil supaya script.js bisa pakai
-        const img = document.getElementById('qr-img');
-        const observer = new MutationObserver(() => {
-          if (img.src && img.src.startsWith('data:image')) {
-            qrPlaceholder.style.display = 'none';
-            qrSection.style.display = 'block';
-          }
-        });
+  </body>
+</html>
         observer.observe(img, { attributes: true, attributeFilter: ['src'] });
       });
     </script>
