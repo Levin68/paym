@@ -6,7 +6,7 @@ const config = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
   auth_token: process.env.ORKUT_AUTH_TOKEN,
   baseQrString: (process.env.BASE_QR_STRING || '').trim(),
-  logoPath: null // kalau mau logo tinggal diisi path
+  logoPath: null
 };
 
 function generateRef(prefix = 'REF') {
@@ -24,7 +24,8 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { amount, theme = 'theme1' } = req.body || {};
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const { amount, theme = 'theme1' } = body;
     const nominal = Number(amount);
 
     if (!Number.isFinite(nominal) || nominal <= 0) {
@@ -63,6 +64,10 @@ module.exports = async (req, res) => {
   } catch (err) {
     console.error('create-qris error:', err);
     return res
+      .status(500)
+      .json({ success: false, message: err.message || 'Internal server error' });
+  }
+};    return res
       .status(500)
       .json({ success: false, message: err.message || 'Internal server error' });
   }
