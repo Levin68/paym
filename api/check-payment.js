@@ -1,68 +1,98 @@
 // api/check-payment.js
+// Node 20 di Vercel sudah punya fetch built-in, jadi nggak perlu node-fetch.
 
-// Helper: cache supaya modul nggak di-import berkali-kali
-let cachedPaymentChecker = null;
-
-async function getPaymentChecker() {
-  if (cachedPaymentChecker) return cachedPaymentChecker;
-
-  try {
-    // autoft-qris itu dual module (ESM + CJS), jadi pakai dynamic import
-    const mod = await import('autoft-qris');
-
-    const PaymentChecker =
-      mod.PaymentChecker ||
-      (mod.default && mod.default.PaymentChecker) ||
-      null;
-
-    if (!PaymentChecker) {
-      console.error(
-        '[check-payment] PaymentChecker tidak ditemukan di autoft-qris export'
-      );
-      return null;
-    }
-
-    cachedPaymentChecker = PaymentChecker;
-    return PaymentChecker;
-  } catch (err) {
-    console.error('[check-payment] Gagal import autoft-qris:', err);
-    return null;
-  }
-}
+// TODO: ganti ini pakai URL endpoint cek pembayaran dari OrderKuota
+// minta ke @AutoFtBot69 / dokumentasi mereka.
+const ORDERKUOTA_CHECK_URL = process.env.ORKUT_CHECK_URL || 'https://example.com/orderkuota/check-payment';
 
 module.exports = async (req, res) => {
+  if (req.method !== 'GET') {
+    return res.status(405).json({
+      success: false,
+      message: 'Method not allowed. Gunakan GET.'
+    });
+  }
+
+  const { reference, amount } = req.query;
+
+  if (!reference || !amount) {
+    return res.status(400).json({
+      success: false,
+      message: 'Param reference & amount wajib diisi.'
+    });
+  }
+
   try {
-    // --- Cek method ---
-    if (req.method !== 'GET') {
-      return res.status(405).json({
-        success: false,
-        message: 'Method not allowed. Gunakan GET.'
-      });
-    }
+    // kredensial dari ENV (sama seperti create-qris)
+    const authUsername = process.env.ORKUT_AUTH_USERNAME;
+    const authToken = process.env.ORKUT_AUTH_TOKEN;
 
-    // --- Ambil query ---
-    const { reference, amount } = req.query;
-
-    if (!reference || !amount) {
-      return res.status(400).json({
-        success: false,
-        message: 'Query "reference" dan "amount" wajib diisi.'
-      });
-    }
-
-    const numericAmount = Number(amount);
-    if (!numericAmount || numericAmount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Amount tidak valid.'
-      });
-    }
-
-    // --- Load PaymentChecker dari autoft-qris ---
-    const PaymentChecker = await getPaymentChecker();
-    if (!PaymentChecker) {
-      // DI SINI kalau ada masalah library, dia BALIK JSON, bukan crash
+    if (!authUsername || !authToken) {
       return res.status(500).json({
+        success: false,
+        message: 'ENV ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum di-set di Vercel.'
+      });
+    }
+
+    // ====== CONTOH REQUEST KE ORDERKUOTA ======
+    // Bentuk ini cuma contoh. Samakan dengan dokumen resmi API OrderKuota.
+    const upstreamRes = await fetch(ORDERKUOTA_CHECK_URL, {
+      method: 'POST',                     // kalau API mereka pakai GET, ubah di sini
+      headers: {
+        'Content-Type': 'application/json',
+        'x-auth-username': authUsername,  // atau header lain sesuai dokumentasi
+        'x-auth-token': authToken
+      },
+      body: JSON.stringify({
+        reference,
+        amount: Number(amount)
+      })
+    });
+
+    const rawText = await upstreamRes.text();
+
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (err) {
+      // Respon bukan JSON (misal: 404 HTML, atau text "BAD REQUEST")
+      return res.status(502).json({
+        success: false,
+        message:
+          'Respon OrderKuota bukan JSON. Cuplikan: ' +
+          rawText.slice(0, 200)
+      });
+    }
+
+    // ====== MAPPING RESPONSE ======
+    // Anggap API balikin { success:true, data:{ status:'PAID'|'UNPAID'|... } }
+    // Kalau format aslinya beda, mapping aja di sini.
+    if (!upstreamRes.ok || data.success === false) {
+      return res.status(200).json({
+        success: false,
+        message: data.message || 'Gagal cek pembayaran di OrderKuota',
+        data: data.data || null
+      });
+    }
+
+    // pastikan ada field status
+    const status = data.data?.status || 'UNKNOWN';
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        status,
+        raw: data.data || data
+      }
+    });
+  } catch (err) {
+    console.error('Error check-payment:', err);
+    return res.status(500).json({
+      success: false,
+      message: `Server error saat cek pembayaran: ${err.message}`
+    });
+  }
+};      return res.status(500).json({
         success: false,
         message:
           'Server gagal load PaymentChecker dari autoft-qris. Coba beberapa saat lagi atau hubungi admin.'
