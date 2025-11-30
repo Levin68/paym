@@ -9,5 +9,8 @@
   "license": "MIT",
   "dependencies": {
     "autoft-qris": "^0.0.9"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
