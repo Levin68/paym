@@ -1,9 +1,5 @@
 // api/check-payment.js
 
-// PENTING: butuh dependency ini di package.json:
-// "autoft-qris": "^0.0.9"
-const { PaymentChecker } = require('autoft-qris');
-
 module.exports = async (req, res) => {
   // Hanya izinkan GET
   if (req.method !== 'GET') {
@@ -13,10 +9,35 @@ module.exports = async (req, res) => {
     });
   }
 
+  let PaymentChecker;
+
+  // Coba load autoft-qris secara aman
+  try {
+    const mod = require('autoft-qris');
+
+    // Coba beberapa kemungkinan bentuk export
+    PaymentChecker =
+      mod.PaymentChecker ||
+      (mod.default && mod.default.PaymentChecker) ||
+      mod; // kalau dia export langsung kelasnya
+
+    if (typeof PaymentChecker !== 'function') {
+      throw new Error(
+        'PaymentChecker bukan function. Cek versi autoft-qris atau bentuk export-nya.'
+      );
+    }
+  } catch (err) {
+    console.error('Gagal require autoft-qris / PaymentChecker:', err);
+    return res.status(500).json({
+      success: false,
+      message:
+        'Server gagal load PaymentChecker dari autoft-qris: ' + err.message
+    });
+  }
+
   try {
     const { reference, amount } = req.query;
 
-    // Validasi query
     if (!reference || !amount) {
       return res.status(400).json({
         success: false,
@@ -32,7 +53,6 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Ambil kredensial dari ENV Vercel
     const auth_username = process.env.ORKUT_AUTH_USERNAME;
     const auth_token = process.env.ORKUT_AUTH_TOKEN;
 
@@ -44,25 +64,32 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Instance PaymentChecker sesuai README
+    // Bener-bener sama pola-nya kayak README
     const checker = new PaymentChecker({
       auth_token,
       auth_username
     });
 
-    // Call ke OrderKuota lewat autoft-qris
     const result = await checker.checkPaymentStatus(reference, numericAmount);
 
-    // Kalau library sudah balikin { success, data, message }
+    // Kalau lib sudah balikin { success, data, message }
     if (result && typeof result === 'object' && 'success' in result) {
       return res.status(result.success ? 200 : 400).json(result);
     }
 
-    // Fallback kalau bentuk result beda
+    // Fallback kalau bentuknya beda
     return res.status(200).json({
       success: true,
       data: result
     });
+  } catch (err) {
+    console.error('Error di handler /api/check-payment:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error: ' + err.message
+    });
+  }
+};    });
   } catch (err) {
     console.error('Error di /api/check-payment:', err);
     return res.status(500).json({
