@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentRef = null;
   let currentAmount = null;
   let pollTimer = null;
+  let pollStart = null;
 
   function formatRupiah(n) {
     n = Number(n || 0);
@@ -43,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function generateQr() {
     const amount = Number(amountInput.value);
-    const theme = 'theme1'; // kita fix theme1 aja
+    const theme = 'theme1';
 
     if (!amount || amount <= 0) {
       alert('Nominal tidak valid');
@@ -78,8 +79,15 @@ document.addEventListener('DOMContentLoaded', () => {
       amountText.textContent = formatRupiah(amt);
       setStatus('pending', 'Menunggu pembayaran...');
 
+      // reset polling
       if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(pollStatus, 3000);
+      pollStart = Date.now();
+
+      // cek SEKALI LANGSUNG
+      await pollStatus();
+
+      // lalu polling tiap 1 detik
+      pollTimer = setInterval(pollStatus, 1000);
     } catch (err) {
       console.error(err);
       setStatus('error', 'Error: ' + err.message);
@@ -89,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // cari field status DI MANA SAJA di dalam objek JSON
+  // deep search status di JSON, nama field bebas
   function deepFindStatus(obj) {
     if (!obj || typeof obj !== 'object') return '';
 
@@ -125,24 +133,31 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function extractStatusFromResponse(json) {
-    // coba dulu dari data yang sudah dinormalisasi backend
     if (json && json.data && json.data.status) {
       return String(json.data.status).toUpperCase();
     }
 
-    // kalau nggak ada, coba deep search di raw
     if (json && json.raw) {
       const s = deepFindStatus(json.raw);
       if (s) return s.toUpperCase();
     }
 
-    // terakhir, deep search di objek penuh (kalau backend belum pakai field raw)
     const s2 = deepFindStatus(json);
     return s2 ? s2.toUpperCase() : '';
   }
 
   async function pollStatus() {
     if (!currentRef) return;
+
+    // safety: stop polling setelah 5 menit
+    if (pollStart && Date.now() - pollStart > 5 * 60 * 1000) {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      setStatus('pending', 'Timeout: tidak ada pembayaran terdeteksi');
+      return;
+    }
 
     try {
       const url =
