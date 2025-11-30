@@ -1,68 +1,74 @@
 // api/check-payment.js
 
-// PAKAI CJS BIASA (SAMA KAYA create-qris.js)
-let PaymentChecker;
-
-try {
-  // autoft-qris versi terbaru sudah expose PaymentChecker di sini
-  const lib = require('autoft-qris');
-  PaymentChecker = lib.PaymentChecker;
-} catch (err) {
-  console.error('Gagal require autoft-qris untuk PaymentChecker:', err);
-}
-
-// ambil kredensial dari ENV Vercel
-const AUTH_USERNAME = process.env.ORKUT_AUTH_USERNAME;
-const AUTH_TOKEN = process.env.ORKUT_AUTH_TOKEN;
-
-let checkerInstance = null;
-
-function getPaymentChecker() {
-  if (!PaymentChecker) {
-    throw new Error(
-      'PaymentChecker tidak tersedia dari autoft-qris. Cek versi package / dependency.'
-    );
-  }
-
-  if (!AUTH_USERNAME || !AUTH_TOKEN) {
-    throw new Error(
-      'ENV ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum di-set di Vercel.'
-    );
-  }
-
-  if (!checkerInstance) {
-    checkerInstance = new PaymentChecker({
-      auth_token: AUTH_TOKEN,
-      auth_username: AUTH_USERNAME
+module.exports = async function handler(req, res) {
+  // Hanya boleh GET
+  if (req.method !== 'GET') {
+    return res.status(405).json({
+      success: false,
+      message: 'Method not allowed. Use GET.'
     });
   }
 
-  return checkerInstance;
-}
+  // Ambil query dari URL
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const reference = url.searchParams.get('reference');
+  const amountParam = url.searchParams.get('amount');
 
-module.exports = async (req, res) => {
-  // kita pakai GET dari frontend
-  if (req.method !== 'GET') {
-    return res
-      .status(405)
-      .json({ success: false, message: 'Method not allowed. Use GET.' });
+  const amount = Number(amountParam);
+
+  if (!reference || !amount || Number.isNaN(amount) || amount <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Param reference / amount tidak valid.'
+    });
   }
 
+  // --- LOAD PaymentChecker dengan aman (ESM support) ---
+  let PaymentChecker;
   try {
-    const { reference, amount } = req.query;
-    const amt = parseInt(amount, 10);
+    const autoft = await import('autoft-qris');
 
-    if (!amt || amt <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'amount query tidak valid'
-      });
+    // coba beberapa kemungkinan export
+    PaymentChecker =
+      autoft.PaymentChecker ||
+      (autoft.default && autoft.default.PaymentChecker);
+
+    if (!PaymentChecker) {
+      throw new Error(
+        'Export PaymentChecker tidak ditemukan di autoft-qris. Pastikan versi package sudah yang terbaru (>= 0.0.9).'
+      );
     }
+  } catch (err) {
+    console.error('ERR_LOAD_PAYMENTCHECKER', err);
+    return res.status(500).json({
+      success: false,
+      message:
+        'Server gagal load PaymentChecker dari autoft-qris: ' + err.message
+    });
+  }
 
-    const checker = getPaymentChecker();
+  // --- PANGGIL API OrderKuota lewat PaymentChecker ---
+  try {
+    const checker = new PaymentChecker({
+      auth_token: process.env.ORKUT_AUTH_TOKEN,
+      auth_username: process.env.ORKUT_AUTH_USERNAME
+    });
 
-    // sesuai contoh di README, reference sebenernya nggak wajib dipakai
-    const result = await checker.checkPaymentStatus(reference || null, amt);
+    const result = await checker.checkPaymentStatus(reference, amount);
+
+    // result biasanya bentuknya { success, data: { status: 'PAID' / ... } }
+    return res.status(200).json({
+      success: true,
+      data: result.data || result
+    });
+  } catch (err) {
+    console.error('ERR_CHECK_PAYMENT', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal cek status ke OrderKuota: ' + err.message
+    });
+  }
+};    const result = await checker.checkPaymentStatus(reference || null, amt);
 
     // library biasanya balikin { success, data: { status, ... } }
     const status =
