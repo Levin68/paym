@@ -1,7 +1,19 @@
 // api/check-payment.js
 // Cek status pembayaran ke OrderKuota lewat autoft-qris
 
-const { PaymentChecker } = require('autoft-qris');
+let PaymentChecker;
+
+// Coba require versi utama dulu
+try {
+  ({ PaymentChecker } = require('autoft-qris'));
+} catch (e) {
+  // Fallback ke file .cjs kalau entry utama pakai ESM
+  try {
+    PaymentChecker = require('autoft-qris/src/payment-checker.cjs');
+  } catch (e2) {
+    console.error('Gagal load PaymentChecker dari autoft-qris', e, e2);
+  }
+}
 
 module.exports = async (req, res) => {
   // Hanya izinkan GET
@@ -11,10 +23,19 @@ module.exports = async (req, res) => {
       .json({ success: false, message: 'Method not allowed. Use GET.' });
   }
 
+  // Kalau library gagal di-load, jangan crash, balas JSON aja
+  if (!PaymentChecker) {
+    return res.status(500).json({
+      success: false,
+      message: 'Server gagal load PaymentChecker dari autoft-qris.'
+    });
+  }
+
   try {
     const { reference, amount } = req.query || {};
     const amt = Number(amount);
 
+    // Kalau kamu buka /api/check-payment tanpa param, masuknya ke sini:
     if (!reference || !amt || amt <= 0) {
       return res.status(400).json({
         success: false,
@@ -22,7 +43,6 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Pastikan ENV sudah di-set di Vercel
     const auth_username = process.env.ORKUT_AUTH_USERNAME;
     const auth_token = process.env.ORKUT_AUTH_TOKEN;
 
@@ -39,16 +59,17 @@ module.exports = async (req, res) => {
       auth_username
     });
 
-    // autoft-qris sudah balikin { success, data, message }
+    // autoft-qris biasanya balikin: { success, data: { status, ... }, message? }
     const result = await checker.checkPaymentStatus(reference, amt);
 
-    // langsung terusin ke frontend
+    // Terusin apa adanya ke frontend
     return res.status(200).json(result);
   } catch (err) {
     console.error('check-payment error', err);
     return res.status(500).json({
       success: false,
-      message: err.message || 'Terjadi kesalahan di server saat cek pembayaran.'
+      message:
+        err.message || 'Terjadi kesalahan di server saat cek pembayaran.'
     });
   }
 };
