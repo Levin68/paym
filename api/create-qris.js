@@ -1,4 +1,4 @@
-// /api/create-qris.js
+// api/create-qris.js
 const { QRISGenerator } = require('autoft-qris');
 
 const config = {
@@ -6,10 +6,17 @@ const config = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
   auth_token: process.env.ORKUT_AUTH_TOKEN,
   baseQrString: (process.env.BASE_QR_STRING || '').trim(),
-  logoPath: null, // kalau mau pakai logo bisa diatur nanti
+  logoPath: null // kalau mau logo nanti bisa diisi path file
 };
 
+function generateRef(prefix = 'REF') {
+  const ts = Date.now().toString(36).toUpperCase();
+  const rand = Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
+  return `${prefix}${ts}${rand}`.slice(0, 16);
+}
+
 module.exports = async (req, res) => {
+  // Vercel serverless style
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ success: false, message: 'Method not allowed' });
@@ -22,6 +29,7 @@ module.exports = async (req, res) => {
     if (!Number.isFinite(nominal) || nominal <= 0) {
       return res.status(400).json({ success: false, message: 'Amount tidak valid' });
     }
+
     if (!config.baseQrString) {
       return res.status(500).json({ success: false, message: 'BASE_QR_STRING belum di-set' });
     }
@@ -31,9 +39,8 @@ module.exports = async (req, res) => {
     const qrString = qrisGen.generateQrString(nominal);
     const qrBuffer = await qrisGen.generateQRWithLogo(qrString);
 
-    const reference = 'REF' + Date.now();
+    const reference = generateRef();
 
-    // kirim balik sebagai base64 supaya gampang ditampilkan di browser
     const qrBase64 = qrBuffer.toString('base64');
 
     return res.status(200).json({
@@ -41,13 +48,15 @@ module.exports = async (req, res) => {
       data: {
         ref: reference,
         amount: nominal,
-        theme,
+        theme: theme === 'theme2' ? 'theme2' : 'theme1',
         qrString,
-        qrImage: `data:image/png;base64,${qrBase64}`,
-      },
+        qrImage: `data:image/png;base64,${qrBase64}`
+      }
     });
   } catch (err) {
     console.error('create-qris error:', err);
-    return res.status(500).json({ success: false, message: err.message || 'Internal error' });
+    return res
+      .status(500)
+      .json({ success: false, message: err.message || 'Internal server error' });
   }
 };
