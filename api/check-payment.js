@@ -1,5 +1,18 @@
 // api/check-payment.js
-// Cek status pembayaran ke OrderKuota lewat autoft-qris (versi aman)
+// Cek status pembayaran ke OrderKuota lewat autoft-qris (pakai require biasa)
+
+let PaymentChecker = null;
+let loadError = null;
+
+try {
+  // Sama kayak README: ambil dari root package
+  const mod = require('autoft-qris');
+  // Coba baca dari named export atau dari default (kalau CJS bungkus)
+  PaymentChecker = mod.PaymentChecker || (mod.default && mod.default.PaymentChecker);
+} catch (e) {
+  loadError = e;
+  console.error('Gagal load PaymentChecker dari autoft-qris:', e);
+}
 
 module.exports = async (req, res) => {
   // Hanya izinkan GET
@@ -9,30 +22,13 @@ module.exports = async (req, res) => {
       .json({ success: false, message: 'Method not allowed. Use GET.' });
   }
 
-  let PaymentChecker;
-
-  try {
-    // Coba import ESM / CJS secara dinamis
-    const mod = await import('autoft-qris').catch(() => null);
-
-    if (mod && mod.PaymentChecker) {
-      PaymentChecker = mod.PaymentChecker;
-    } else {
-      // fallback: coba langsung file CJS
-      const cjsMod = await import('autoft-qris/src/payment-checker.cjs').catch(
-        () => null
-      );
-      PaymentChecker = cjsMod && (cjsMod.default || cjsMod.PaymentChecker);
-    }
-  } catch (e) {
-    console.error('Gagal import autoft-qris:', e);
-  }
-
-  // Kalau library gagal di-load, balas JSON (jangan crash)
+  // Kalau gagal load library, jangan crash, balas JSON
   if (!PaymentChecker) {
     return res.status(500).json({
       success: false,
-      message: 'Server gagal load PaymentChecker dari autoft-qris.'
+      message:
+        'Server gagal load PaymentChecker dari autoft-qris: ' +
+        (loadError ? loadError.message : 'unknown error')
     });
   }
 
@@ -63,6 +59,21 @@ module.exports = async (req, res) => {
       auth_token,
       auth_username
     });
+
+    // autoft-qris biasanya balikin: { success, data: { status, ... }, message? }
+    const result = await checker.checkPaymentStatus(reference, amt);
+
+    // Terusin apa adanya ke frontend
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error('check-payment error', err);
+    return res.status(500).json({
+      success: false,
+      message:
+        err.message || 'Terjadi kesalahan di server saat cek pembayaran.'
+    });
+  }
+};    });
 
     // autoft-qris biasanya balikin: { success, data: { status, ... }, message? }
     const result = await checker.checkPaymentStatus(reference, amt);
