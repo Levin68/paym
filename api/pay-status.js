@@ -1,21 +1,31 @@
 // api/pay-status.js
+// CJS style – cocok sama environment Vercel Node 20
 
-let PaymentCheckerClass = null;
+const fs = require('fs');
+const path = require('path');
+const chalk = require('chalk');
 
-async function getPaymentChecker() {
-  if (!PaymentCheckerClass) {
-    const m = await import('autoft-qris/src/payment-checker.mjs');
-    PaymentCheckerClass = m.default || m.PaymentChecker;
-  }
-  return new PaymentCheckerClass({
-    auth_token: process.env.ORKUT_AUTH_TOKEN,
-    auth_username: process.env.ORKUT_AUTH_USERNAME
-  });
+const _norm = (m) => (m && (m.default || m)) || m;
+
+// cari folder autoft-qris/src
+const autoftEntry = require.resolve('autoft-qris');
+let pkgDir = path.dirname(autoftEntry);
+while (pkgDir && path.basename(pkgDir) !== 'autoft-qris') {
+  pkgDir = path.dirname(pkgDir);
 }
+const srcDir = fs.existsSync(path.join(pkgDir, 'src'))
+  ? path.join(pkgDir, 'src')
+  : pkgDir;
 
-// Versi santai: kalau nggak cocok, balikin null aja (bukan error)
+const PaymentChecker = _norm(
+  require(path.join(srcDir, 'payment-checker.cjs'))
+);
+
+// ====== NORMALIZER (copy dari helper bot WA) ======
 function normalizeCheckerResult(res) {
   if (!res || typeof res !== 'object') return null;
+  if (res.success === false || res.error) return null;
+  if (typeof res.status === 'number' && res.status >= 400) return null;
 
   let data = res.data || res.result || res;
   if (Array.isArray(data)) data = data[0] || {};
@@ -56,9 +66,10 @@ function normalizeCheckerResult(res) {
     data.settled_at ||
     null;
 
-  return { status, amount, ref, paidAt };
+  return { status, amount, ref, paidAt, raw: res };
 }
 
+// ====== HTTP HANDLER ======
 module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
@@ -67,34 +78,54 @@ module.exports = async (req, res) => {
       .json({ success: false, message: 'Method not allowed' });
   }
 
-  try {
-    const { ref, amount } = req.query;
+  const { ref, amount } = req.query;
+  const nominal = amount ? Number(amount) : undefined;
 
-    if (!ref) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'ref wajib diisi' });
+  if (!ref) {
+    // frontend selalu kirim ref, tapi guard aja
+    return res
+      .status(400)
+      .json({ success: false, message: 'ref wajib diisi' });
+  }
+
+  try {
+    const checker = new PaymentChecker({
+      auth_token: process.env.ORKUT_AUTH_TOKEN,
+      auth_username: process.env.ORKUT_AUTH_USERNAME
+    });
+
+    const apiRes = await checker.checkPaymentStatus(ref, nominal);
+    const n = normalizeCheckerResult(apiRes);
+
+    // log buat ngecek bentuk data aslinya di Vercel
+    try {
+      console.log(
+        chalk.cyan(
+          `[PAY_STATUS] ref=${ref} amt=${nominal} norm-status=${
+            n ? n.status : 'null'
+          } raw=${JSON.stringify(apiRes).slice(0, 300)}...`
+        )
+      );
+    } catch (e) {
+      console.log('[PAY_STATUS]', ref, nominal);
     }
 
-    const checker = await getPaymentChecker();
-    const nominal = amount ? Number(amount) : undefined;
-
-    const rawResult = await checker.checkPaymentStatus(ref, nominal);
-    const normalized = normalizeCheckerResult(rawResult);
-
-    // Selalu success: true kalau fetch ke provider berhasil
+    // selalu kirim 200 supaya frontend bisa mutusin sendiri
     return res.status(200).json({
       success: true,
-      data: normalized, // bisa null kalau nggak kebaca
-      raw: rawResult     // bentuk asli dari PaymentChecker
+      ref: n && n.ref ? n.ref : null,
+      amount: n && Number.isFinite(n.amount) ? n.amount : null,
+      status: n ? n.status : null,
+      paidAt: n ? n.paidAt : null,
+      normalized: n,
+      raw: apiRes
     });
   } catch (err) {
     console.error('pay-status error:', err);
     return res.status(500).json({
       success: false,
-      stage: 'handler',
-      message: err.message || 'Internal server error',
-      stack: err.stack
+      error: true,
+      message: err.message || 'Internal server error'
     });
   }
 };
