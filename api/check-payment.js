@@ -59,7 +59,6 @@ module.exports = async (req, res) => {
       reference,
       Number(amount)
     );
-
     // langsung lempar response dari library ke FE
     return res.status(200).json(result);
   } catch (err) {
