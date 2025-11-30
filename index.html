@@ -51,7 +51,7 @@
       <!-- HASIL QR -->
       <section
         id="resultBox"
-        class="mt-4 hidden border border-slate-700 rounded-xl p-4 space-y-3 bg-slate-900/60"
+        class="mt-4 hidden border border-slate-700 rounded-xl p-4 space-y-4 bg-slate-900/60"
       >
         <!-- Reference di atas -->
         <div class="text-xs text-slate-400">
@@ -66,11 +66,12 @@
         <div class="flex flex-col items-center space-y-3">
           <div
             id="qrcode"
-            class="bg-white p-2 rounded-lg"
+            class="bg-white p-2 rounded-lg cursor-pointer"
             style="width: 264px; height: 264px"
+            title="Tap untuk download QR"
           ></div>
 
-          <!-- Status full width, center, boleh multi-baris -->
+          <!-- Status full width, center -->
           <p
             id="statusText"
             class="text-sm font-semibold text-amber-300 text-center break-words px-2"
@@ -78,8 +79,9 @@
             Menunggu generate QR...
           </p>
 
-          <p class="text-xs text-slate-500 text-center">
-            Scan QR ini pakai e-wallet / m-banking yang support QRIS.
+          <p class="text-[11px] text-slate-500 text-center">
+            Tap QR untuk download gambar. Scan QR ini pakai e-wallet / m-banking
+            yang support QRIS.
           </p>
         </div>
       </section>
