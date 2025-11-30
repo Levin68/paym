@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <title>LevPay QRIS Simple</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Tailwind buat styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- QRCodeJS untuk generate QR di browser -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  </head>
+  <body
+    class="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center"
+  >
+    <div
+      class="w-full max-w-md bg-slate-800 rounded-2xl shadow-xl p-6 space-y-4"
+    >
+      <header class="space-y-1 text-center mb-2">
+        <h1 class="text-2xl font-bold">LevPay – QRIS Simple</h1>
+        <p class="text-sm text-slate-400">
+          Generate QRIS polos + cek status pembayaran lewat server Vercel.
+        </p>
+      </header>
+
+      <section class="space-y-3">
+        <label class="block text-sm font-medium">
+          Nominal (IDR)
+          <input
+            id="amount"
+            type="number"
+            min="1"
+            step="1"
+            placeholder="Contoh: 1000"
+            class="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </label>
+
+        <button
+          id="createQRBtn"
+          class="w-full rounded-lg bg-blue-600 py-2.5 text-sm font-semibold hover:bg-blue-700 active:scale-95 transition disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          Buat QR
+        </button>
+
+        <p id="errorText" class="text-xs text-red-400 hidden"></p>
+      </section>
+
+      <section
+        id="resultBox"
+        class="mt-4 hidden border border-slate-700 rounded-xl p-4 space-y-3 bg-slate-900/60"
+      >
+        <div class="flex items-center justify-between">
+          <div class="text-xs text-slate-400">
+            <div>Reference:</div>
+            <div
+              id="refText"
+              class="font-mono text-xs text-slate-100 break-all"
+            ></div>
+          </div>
+          <div class="text-right text-xs">
+            <div class="text-slate-400">Status:</div>
+            <div id="statusText" class="font-semibold text-amber-300">
+              Menunggu generate QR...
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-col items-center space-y-2">
+          <div
+            id="qrcode"
+            class="bg-white p-2 rounded-lg"
+            style="width: 264px; height: 264px"
+          ></div>
+
+          <p class="text-xs text-slate-500 text-center">
+            Scan QR ini pakai e-wallet / m-banking yang support QRIS.
+          </p>
+        </div>
+      </section>
+
+      <section class="border-t border-slate-700 pt-3">
+        <p class="text-xs text-slate-500">
+          🔁 Status dicek otomatis setiap
+          <span class="font-semibold text-emerald-300">1 detik</span> sampai
+          pembayaran <span class="font-semibold text-emerald-300">PAID</span>.
+        </p>
+      </section>
+    </div>
+
+    <script src="./js/script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "levpay-qris-simple",
+  "version": "1.0.0",
+  "description": "LevPay QRIS simple (pure qris string + vercel serverless)",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "autoft-qris": "^0.0.9"
+  }
+}
