@@ -1,25 +1,24 @@
 // api/pay-status.js
 
+let PaymentCheckerClass = null;
+
+async function getPaymentChecker() {
+  if (!PaymentCheckerClass) {
+    const m = await import('autoft-qris/src/payment-checker.mjs');
+    PaymentCheckerClass = m.default || m.PaymentChecker;
+  }
+  return new PaymentCheckerClass({
+    auth_token: process.env.ORKUT_AUTH_TOKEN,
+    auth_username: process.env.ORKUT_AUTH_USERNAME
+  });
+}
+
 module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return res
       .status(405)
       .json({ success: false, message: 'Method not allowed' });
-  }
-
-  // 1) require di dalam handler, pakai try..catch
-  let PaymentChecker;
-  try {
-    ({ PaymentChecker } = require('autoft-qris'));
-  } catch (e) {
-    console.error('ERROR require autoft-qris (pay-status):', e);
-    return res.status(500).json({
-      success: false,
-      stage: 'require-autoft-qris',
-      message: e.message,
-      stack: e.stack
-    });
   }
 
   try {
@@ -31,11 +30,7 @@ module.exports = async (req, res) => {
         .json({ success: false, message: 'ref wajib diisi' });
     }
 
-    const checker = new PaymentChecker({
-      auth_token: process.env.ORKUT_AUTH_TOKEN,
-      auth_username: process.env.ORKUT_AUTH_USERNAME
-    });
-
+    const checker = await getPaymentChecker();
     const nominal = amount ? Number(amount) : undefined;
     const result = await checker.checkPaymentStatus(ref, nominal);
 
