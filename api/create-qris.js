@@ -1,4 +1,3 @@
-// api/create-qris.js
 const { QRISGenerator } = require('autoft-qris');
 
 const config = {
@@ -24,7 +23,8 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const body =
+      typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     const { amount, theme = 'theme1' } = body;
     const nominal = Number(amount);
 
