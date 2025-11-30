@@ -6,7 +6,7 @@ const config = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
   auth_token: process.env.ORKUT_AUTH_TOKEN,
   baseQrString: (process.env.BASE_QR_STRING || '').trim(),
-  logoPath: null // kalau mau logo nanti bisa diisi path file
+  logoPath: null // kalau mau logo tinggal diisi path
 };
 
 function generateRef(prefix = 'REF') {
@@ -16,10 +16,11 @@ function generateRef(prefix = 'REF') {
 }
 
 module.exports = async (req, res) => {
-  // Vercel serverless style
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
-    return res.status(405).json({ success: false, message: 'Method not allowed' });
+    return res
+      .status(405)
+      .json({ success: false, message: 'Method not allowed' });
   }
 
   try {
@@ -27,26 +28,32 @@ module.exports = async (req, res) => {
     const nominal = Number(amount);
 
     if (!Number.isFinite(nominal) || nominal <= 0) {
-      return res.status(400).json({ success: false, message: 'Amount tidak valid' });
+      return res
+        .status(400)
+        .json({ success: false, message: 'Amount tidak valid' });
     }
 
     if (!config.baseQrString) {
-      return res.status(500).json({ success: false, message: 'BASE_QR_STRING belum di-set' });
+      return res
+        .status(500)
+        .json({ success: false, message: 'BASE_QR_STRING belum di-set' });
     }
 
-    const qrisGen = new QRISGenerator(config, theme === 'theme2' ? 'theme2' : 'theme1');
+    const qrisGen = new QRISGenerator(
+      config,
+      theme === 'theme2' ? 'theme2' : 'theme1'
+    );
 
     const qrString = qrisGen.generateQrString(nominal);
     const qrBuffer = await qrisGen.generateQRWithLogo(qrString);
 
-    const reference = generateRef();
-
+    const ref = generateRef();
     const qrBase64 = qrBuffer.toString('base64');
 
     return res.status(200).json({
       success: true,
       data: {
-        ref: reference,
+        ref,
         amount: nominal,
         theme: theme === 'theme2' ? 'theme2' : 'theme1',
         qrString,
