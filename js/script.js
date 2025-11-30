@@ -90,21 +90,35 @@ async function checkPayment() {
   if (!currentRef || !currentAmount) return;
 
   try {
-    const url = `/api/check-payment?reference=${encodeURIComponent(
+    // ⬇️ ganti endpoint-nya ke pay-status
+    const url = `/api/pay-status?reference=${encodeURIComponent(
       currentRef
     )}&amount=${currentAmount}`;
 
     const res = await fetch(url);
     const data = await res.json();
+    console.log('pay-status response:', data);
 
-    if (!res.ok || !data.success) {
+    if (!res.ok || data.success === false) {
       console.warn('Gagal cek pembayaran:', data.message || res.statusText);
       return;
     }
 
-    const status = data.data.status; // 'PAID', 'UNPAID', dll
+    // coba ambil status dari beberapa kemungkinan bentuk
+    const status =
+      (data.data && data.data.status) ||
+      data.status ||
+      (data.data && data.data.payment_status) ||
+      '';
 
-    if (status === 'PAID') {
+    if (!status) {
+      console.warn('Status pembayaran tidak ditemukan di response');
+      return;
+    }
+
+    const upper = status.toString().toUpperCase();
+
+    if (upper === 'PAID') {
       statusText.textContent = '✅ Pembayaran berhasil (PAID)';
       statusText.classList.remove('text-amber-300', 'text-red-300');
       statusText.classList.add('text-emerald-300');
@@ -113,12 +127,12 @@ async function checkPayment() {
         clearInterval(pollTimer);
         pollTimer = null;
       }
-    } else if (status === 'UNPAID') {
+    } else if (upper === 'UNPAID' || upper === 'PENDING') {
       statusText.textContent = 'Menunggu pembayaran...';
       statusText.classList.remove('text-emerald-300', 'text-red-300');
       statusText.classList.add('text-amber-300');
     } else {
-      statusText.textContent = `Status: ${status}`;
+      statusText.textContent = `Status: ${upper}`;
       statusText.classList.remove('text-emerald-300');
       statusText.classList.add('text-amber-300');
     }
