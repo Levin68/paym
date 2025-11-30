@@ -1,6 +1,8 @@
 // api/check-payment.js
 
 module.exports = async (req, res) => {
+  console.log('[check-payment] request', req.method, req.query);
+
   if (req.method !== 'GET') {
     return res.status(405).json({
       success: false,
@@ -17,35 +19,56 @@ module.exports = async (req, res) => {
     });
   }
 
-  // ambil kredensial dari ENV Vercel
   const { ORKUT_AUTH_USERNAME, ORKUT_AUTH_TOKEN } = process.env;
 
   if (!ORKUT_AUTH_USERNAME || !ORKUT_AUTH_TOKEN) {
     return res.status(500).json({
       success: false,
-      message: 'ENV ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum diset.'
+      message:
+        'ENV ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum diset di Vercel.'
     });
   }
 
   let PaymentChecker;
 
+  // --- coba require (CommonJS) dulu ---
   try {
-    // PENTING: pakai dynamic import supaya modul ESM bisa ke-load
-    const mod = await import('autoft-qris');
+    const cjs = require('autoft-qris');
+    console.log('[check-payment] require(autoft-qris) keys:', Object.keys(cjs));
 
     PaymentChecker =
-      mod.PaymentChecker ||
-      (mod.default && mod.default.PaymentChecker);
+      cjs.PaymentChecker ||
+      (cjs.default && cjs.default.PaymentChecker) ||
+      cjs.default;
 
-    if (!PaymentChecker) {
-      throw new Error('Export PaymentChecker tidak ditemukan di autoft-qris');
+  } catch (requireErr) {
+    console.log('[check-payment] require gagal, coba import...', requireErr);
+
+    // --- kalau require gagal, fallback ke dynamic import (ESM) ---
+    try {
+      const mod = await import('autoft-qris');
+      console.log('[check-payment] import(autoft-qris) keys:', Object.keys(mod));
+
+      PaymentChecker =
+        mod.PaymentChecker ||
+        (mod.default && mod.default.PaymentChecker) ||
+        mod.default;
+    } catch (importErr) {
+      console.error('[check-payment] import juga gagal:', importErr);
+      return res.status(500).json({
+        success: false,
+        message:
+          'Server gagal load PaymentChecker dari autoft-qris: ' +
+          importErr.message
+      });
     }
-  } catch (err) {
-    console.error('Err load PaymentChecker:', err);
+  }
+
+  if (typeof PaymentChecker !== 'function') {
+    console.error('[check-payment] PaymentChecker bukan function/class:', PaymentChecker);
     return res.status(500).json({
       success: false,
-      message:
-        'Server gagal load PaymentChecker dari autoft-qris: ' + err.message
+      message: 'PaymentChecker dari autoft-qris tidak ditemukan.'
     });
   }
 
@@ -59,18 +82,14 @@ module.exports = async (req, res) => {
       reference,
       Number(amount)
     );
-    // langsung lempar response dari library ke FE
+
+    console.log('[check-payment] result:', result);
     return res.status(200).json(result);
   } catch (err) {
-    console.error('Err checkPaymentStatus:', err);
+    console.error('[check-payment] error saat checkPaymentStatus:', err);
     return res.status(500).json({
       success: false,
       message: 'Gagal cek status pembayaran: ' + err.message
-    });
-  }
-};      success: false,
-      message:
-        err.message || 'Terjadi kesalahan di server saat cek pembayaran.'
     });
   }
 };
