@@ -12,10 +12,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   </head>
   <body
-    class="min-h-screen bg-slate-900 text-slate-100 flex items-center justify-center"
+    class="min-h-screen bg-slate-900 text-slate-100 flex justify-center"
   >
     <div
-      class="w-full max-w-md bg-slate-800 rounded-2xl shadow-xl p-6 space-y-4"
+      class="w-full max-w-md bg-slate-800 rounded-2xl shadow-xl p-6 space-y-4 mt-6 mb-10"
     >
       <header class="space-y-1 text-center mb-2">
         <h1 class="text-2xl font-bold">LevPay – QRIS Simple</h1>
@@ -53,7 +53,7 @@
         id="resultBox"
         class="mt-4 hidden border border-slate-700 rounded-xl p-4 space-y-4 bg-slate-900/60"
       >
-        <!-- Reference di atas -->
+        <!-- Reference -->
         <div class="text-xs text-slate-400">
           <div>Reference:</div>
           <div
@@ -62,7 +62,39 @@
           ></div>
         </div>
 
-        <!-- QR + STATUS DI BAWAH -->
+        <!-- QR + STATUS -->
+        <div class="flex flex-col items-center space-y-3">
+          <div
+            id="qrcode"
+            class="bg-white p-2 rounded-lg"
+          ></div>
+
+          <p
+            id="statusText"
+            class="text-sm font-semibold text-amber-300 text-center break-words px-2"
+          >
+            Menunggu generate QR...
+          </p>
+
+          <p class="text-[11px] text-slate-500 text-center">
+            Scan QR ini pakai e-wallet / m-banking yang support QRIS.
+          </p>
+        </div>
+      </section>
+
+      <!-- FOOTNOTE -->
+      <section class="border-t border-slate-700 pt-3">
+        <p class="text-xs text-slate-500">
+          🔁 Status dicek otomatis setiap
+          <span class="font-semibold text-emerald-300">1 detik</span> sampai
+          pembayaran <span class="font-semibold text-emerald-300">PAID</span>.
+        </p>
+      </section>
+    </div>
+
+    <script src="./js/script.js"></script>
+  </body>
+</html>        <!-- QR + STATUS DI BAWAH -->
         <div class="flex flex-col items-center space-y-3">
           <div
             id="qrcode"
