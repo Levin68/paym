@@ -1,9 +1,9 @@
-// /api/pay-status.js
+// api/pay-status.js
 const { PaymentChecker } = require('autoft-qris');
 
 const checker = new PaymentChecker({
   auth_token: process.env.ORKUT_AUTH_TOKEN,
-  auth_username: process.env.ORKUT_AUTH_USERNAME,
+  auth_username: process.env.ORKUT_AUTH_USERNAME
 });
 
 module.exports = async (req, res) => {
@@ -19,16 +19,16 @@ module.exports = async (req, res) => {
       return res.status(400).json({ success: false, message: 'ref wajib diisi' });
     }
 
-    const nominal = Number(amount || 0);
-    const result = await checker.checkPaymentStatus(ref, nominal || undefined);
+    const nominal = amount ? Number(amount) : undefined;
 
-    // langsung lempar hasil raw biar gampang debug
+    const result = await checker.checkPaymentStatus(ref, nominal);
+
+    // kamu bisa adjust format JSON ini sesuai respons API OrderKuota
     return res.status(200).json(result);
   } catch (err) {
     console.error('pay-status error:', err);
-    return res.status(500).json({ success: false, message: err.message || 'Internal error' });
-  }
-};        'Server error di pay-status: ' + (err && err.message ? err.message : String(err))
-    });
+    return res
+      .status(500)
+      .json({ success: false, message: err.message || 'Internal server error' });
   }
 };
