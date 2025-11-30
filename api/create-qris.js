@@ -1,56 +1,57 @@
 // api/create-qris.js
 const { QRISGenerator } = require('autoft-qris');
 
-// Config dari ENV (isi di Vercel)
-const config = {
-  storeName: process.env.STORE_NAME || 'LevPay',
-  auth_username: process.env.ORKUT_AUTH_USERNAME,
-  auth_token: process.env.ORKUT_AUTH_TOKEN,
-  baseQrString: process.env.BASE_QR_STRING
-  // logoPath & theme gak dipakai, kita cuma butuh string
-};
-
-const qrisGen = new QRISGenerator(config, 'theme1'); // theme ga ngaruh ke string
-
-function makeReference() {
-  return 'REF' + Date.now();
-}
-
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
-    return res
-      .status(405)
-      .json({ success: false, message: 'Method Not Allowed' });
+    return res.status(405).json({
+      success: false,
+      message: 'Method not allowed. Use POST.'
+    });
   }
 
   try {
     const body = req.body || {};
-    const amount = Number(body.amount);
+    const amount = Number(body.amount || 0);
 
     if (!amount || amount <= 0) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'Nominal tidak valid' });
+      return res.status(400).json({
+        success: false,
+        message: 'Nominal tidak valid'
+      });
     }
 
-    const reference = makeReference();
+    const config = {
+      storeName: process.env.STORE_NAME || 'LevPay',
+      auth_username: process.env.ORKUT_AUTH_USERNAME,
+      auth_token: process.env.ORKUT_AUTH_TOKEN,
+      baseQrString: process.env.BASE_QR_STRING
+    };
 
-    // Yang penting: generate QRIS string dari amount
+    // Cek env lengkap belum
+    if (!config.auth_username || !config.auth_token || !config.baseQrString) {
+      return res.status(500).json({
+        success: false,
+        message: 'ENV server belum lengkap (auth_username, auth_token, baseQrString).'
+      });
+    }
+
+    // Bikin instance generator di dalam handler (biar error bisa ke-catch)
+    const qrisGen = new QRISGenerator(config, 'theme1');
+
+    const reference = 'REF' + Date.now();
     const qrString = qrisGen.generateQrString(amount);
 
     return res.status(200).json({
       success: true,
-      data: {
-        reference,
-        amount,
-        qrString
-      }
+      reference,
+      amount,
+      qrString
     });
   } catch (err) {
     console.error('create-qris error:', err);
     return res.status(500).json({
       success: false,
-      message: 'Gagal membuat QRIS'
+      message: 'Server error: ' + (err && err.message ? err.message : 'Unknown error')
     });
   }
 };
