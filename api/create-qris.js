@@ -1,59 +1,50 @@
 // api/create-qris.js
 
+const { QRISGenerator } = require("autoft-qris");
+
 module.exports = async (req, res) => {
-  if (req.method !== 'POST') {
+  if (req.method !== "POST") {
     return res.status(405).json({
       success: false,
-      message: 'Method not allowed. Use POST.'
-    });
-  }
-
-  // 1) Load autoft-qris via dynamic import (ESM)
-  let QRISGenerator;
-  try {
-    const mod = await import('autoft-qris');
-    QRISGenerator = mod.QRISGenerator;
-  } catch (err) {
-    console.error('Gagal load autoft-qris:', err);
-    return res.status(500).json({
-      success: false,
-      message:
-        'Server gagal load library autoft-qris: ' +
-        (err && err.message ? err.message : String(err))
+      message: "Method not allowed. Use POST."
     });
   }
 
   try {
-    const body = req.body || {};
-    const amount = Number(body.amount || 0);
+    const { amount } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'Nominal tidak valid'
+        message: "Nominal tidak valid"
       });
     }
 
+    // Pastikan env tersedia
     const config = {
-      storeName: process.env.STORE_NAME || 'LevPay',
+      storeName: "LevPay",
       auth_username: process.env.ORKUT_AUTH_USERNAME,
       auth_token: process.env.ORKUT_AUTH_TOKEN,
-      baseQrString: process.env.BASE_QR_STRING
+      baseQrString: process.env.BASE_QR_STRING,
+      logoPath: null // tidak pakai logo
     };
 
     if (!config.auth_username || !config.auth_token || !config.baseQrString) {
       return res.status(500).json({
         success: false,
-        message:
-          'ENV server belum lengkap (ORKUT_AUTH_USERNAME, ORKUT_AUTH_TOKEN, BASE_QR_STRING).'
+        message: "ENV tidak lengkap. Harap isi ORKUT_AUTH_USERNAME, ORKUT_AUTH_TOKEN, BASE_QR_STRING"
       });
     }
 
-    const qrisGen = new QRISGenerator(config, 'theme1');
-    const reference = 'REF' + Date.now();
-    const qrString = qrisGen.generateQrString(amount);
+    // Generator tema default (tanpa gambar)
+    const gen = new QRISGenerator(config, "theme1");
 
-    // bentuk dibuat sama kayak yg dipakai script.js (success + data)
+    // Buat referensi unik
+    const reference = "REF" + Date.now();
+
+    // Buat QR STRING
+    const qrString = gen.generateQrString(amount);
+
     return res.status(200).json({
       success: true,
       data: {
@@ -62,11 +53,16 @@ module.exports = async (req, res) => {
         qrString
       }
     });
+
   } catch (err) {
-    console.error('create-qris error:', err);
+    console.error("QR ERROR:", err);
     return res.status(500).json({
       success: false,
-      message:
+      message: "Gagal membuat QR",
+      error: err.toString()
+    });
+  }
+};      message:
         'Server error: ' + (err && err.message ? err.message : 'Unknown error')
     });
   }
