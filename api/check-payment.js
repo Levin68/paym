@@ -1,28 +1,30 @@
 // api/check-payment.js
 
 module.exports = async (req, res) => {
-  if (req.method !== 'POST') {
+  if (req.method !== 'GET') {
     return res.status(405).json({
       success: false,
-      message: 'Method not allowed. Use POST.'
+      message: 'Method not allowed. Use GET.'
     });
   }
 
-  // 1) Coba load PaymentChecker di dalam handler
+  // 1) Load PaymentChecker via dynamic import (ESM)
   let PaymentChecker;
   try {
-    ({ PaymentChecker } = require('autoft-qris'));
+    const mod = await import('autoft-qris');
+    PaymentChecker = mod.PaymentChecker;
   } catch (err) {
     console.error('Gagal load autoft-qris (PaymentChecker):', err);
     return res.status(500).json({
       success: false,
-      message: 'Server gagal load library autoft-qris (PaymentChecker): ' + (err.message || String(err))
+      message:
+        'Server gagal load library autoft-qris (PaymentChecker): ' +
+        (err && err.message ? err.message : String(err))
     });
   }
 
   try {
-    const body = req.body || {};
-    const { reference, amount } = body;
+    const { reference, amount } = req.query || {};
 
     if (!reference || !amount) {
       return res.status(400).json({
@@ -38,12 +40,14 @@ module.exports = async (req, res) => {
 
     const result = await checker.checkPaymentStatus(reference, Number(amount));
 
+    // result dari autoft-qris sudah bentuk { success, data: { status, ... } }
     return res.status(200).json(result);
   } catch (err) {
     console.error('check-payment error:', err);
     return res.status(500).json({
       success: false,
-      message: 'Server error: ' + (err && err.message ? err.message : 'Unknown error')
+      message:
+        'Server error: ' + (err && err.message ? err.message : 'Unknown error')
     });
   }
 };

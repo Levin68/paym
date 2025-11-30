@@ -8,15 +8,18 @@ module.exports = async (req, res) => {
     });
   }
 
-  // 1) Coba load autoft-qris DI DALAM handler
+  // 1) Load autoft-qris via dynamic import (ESM)
   let QRISGenerator;
   try {
-    ({ QRISGenerator } = require('autoft-qris'));
+    const mod = await import('autoft-qris');
+    QRISGenerator = mod.QRISGenerator;
   } catch (err) {
     console.error('Gagal load autoft-qris:', err);
     return res.status(500).json({
       success: false,
-      message: 'Server gagal load library autoft-qris: ' + (err.message || String(err))
+      message:
+        'Server gagal load library autoft-qris: ' +
+        (err && err.message ? err.message : String(err))
     });
   }
 
@@ -41,7 +44,8 @@ module.exports = async (req, res) => {
     if (!config.auth_username || !config.auth_token || !config.baseQrString) {
       return res.status(500).json({
         success: false,
-        message: 'ENV server belum lengkap (auth_username, auth_token, baseQrString).'
+        message:
+          'ENV server belum lengkap (ORKUT_AUTH_USERNAME, ORKUT_AUTH_TOKEN, BASE_QR_STRING).'
       });
     }
 
@@ -49,17 +53,21 @@ module.exports = async (req, res) => {
     const reference = 'REF' + Date.now();
     const qrString = qrisGen.generateQrString(amount);
 
+    // bentuk dibuat sama kayak yg dipakai script.js (success + data)
     return res.status(200).json({
       success: true,
-      reference,
-      amount,
-      qrString
+      data: {
+        reference,
+        amount,
+        qrString
+      }
     });
   } catch (err) {
     console.error('create-qris error:', err);
     return res.status(500).json({
       success: false,
-      message: 'Server error: ' + (err && err.message ? err.message : 'Unknown error')
+      message:
+        'Server error: ' + (err && err.message ? err.message : 'Unknown error')
     });
   }
 };
