@@ -1,68 +1,120 @@
 // api/check-payment.js
 
-module.exports = async function handler(req, res) {
-  // Hanya boleh GET
-  if (req.method !== 'GET') {
-    return res.status(405).json({
-      success: false,
-      message: 'Method not allowed. Use GET.'
-    });
-  }
+// Helper: cache supaya modul nggak di-import berkali-kali
+let cachedPaymentChecker = null;
 
-  // Ambil query dari URL
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const reference = url.searchParams.get('reference');
-  const amountParam = url.searchParams.get('amount');
+async function getPaymentChecker() {
+  if (cachedPaymentChecker) return cachedPaymentChecker;
 
-  const amount = Number(amountParam);
-
-  if (!reference || !amount || Number.isNaN(amount) || amount <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Param reference / amount tidak valid.'
-    });
-  }
-
-  // --- LOAD PaymentChecker dengan aman (ESM support) ---
-  let PaymentChecker;
   try {
-    const autoft = await import('autoft-qris');
+    // autoft-qris itu dual module (ESM + CJS), jadi pakai dynamic import
+    const mod = await import('autoft-qris');
 
-    // coba beberapa kemungkinan export
-    PaymentChecker =
-      autoft.PaymentChecker ||
-      (autoft.default && autoft.default.PaymentChecker);
+    const PaymentChecker =
+      mod.PaymentChecker ||
+      (mod.default && mod.default.PaymentChecker) ||
+      null;
 
     if (!PaymentChecker) {
-      throw new Error(
-        'Export PaymentChecker tidak ditemukan di autoft-qris. Pastikan versi package sudah yang terbaru (>= 0.0.9).'
+      console.error(
+        '[check-payment] PaymentChecker tidak ditemukan di autoft-qris export'
       );
+      return null;
     }
+
+    cachedPaymentChecker = PaymentChecker;
+    return PaymentChecker;
   } catch (err) {
-    console.error('ERR_LOAD_PAYMENTCHECKER', err);
-    return res.status(500).json({
-      success: false,
-      message:
-        'Server gagal load PaymentChecker dari autoft-qris: ' + err.message
-    });
+    console.error('[check-payment] Gagal import autoft-qris:', err);
+    return null;
   }
+}
 
-  // --- PANGGIL API OrderKuota lewat PaymentChecker ---
+module.exports = async (req, res) => {
   try {
+    // --- Cek method ---
+    if (req.method !== 'GET') {
+      return res.status(405).json({
+        success: false,
+        message: 'Method not allowed. Gunakan GET.'
+      });
+    }
+
+    // --- Ambil query ---
+    const { reference, amount } = req.query;
+
+    if (!reference || !amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query "reference" dan "amount" wajib diisi.'
+      });
+    }
+
+    const numericAmount = Number(amount);
+    if (!numericAmount || numericAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount tidak valid.'
+      });
+    }
+
+    // --- Load PaymentChecker dari autoft-qris ---
+    const PaymentChecker = await getPaymentChecker();
+    if (!PaymentChecker) {
+      // DI SINI kalau ada masalah library, dia BALIK JSON, bukan crash
+      return res.status(500).json({
+        success: false,
+        message:
+          'Server gagal load PaymentChecker dari autoft-qris. Coba beberapa saat lagi atau hubungi admin.'
+      });
+    }
+
+    // --- Cek env ---
+    const authToken = process.env.ORKUT_AUTH_TOKEN;
+    const authUsername = process.env.ORKUT_AUTH_USERNAME;
+
+    if (!authToken || !authUsername) {
+      console.error('[check-payment] ENV belum lengkap');
+      return res.status(500).json({
+        success: false,
+        message:
+          'Konfigurasi server belum lengkap (auth token / username). Hubungi admin.'
+      });
+    }
+
+    // --- Panggil PaymentChecker ---
     const checker = new PaymentChecker({
-      auth_token: process.env.ORKUT_AUTH_TOKEN,
-      auth_username: process.env.ORKUT_AUTH_USERNAME
+      auth_token: authToken,
+      auth_username: authUsername
     });
 
-    const result = await checker.checkPaymentStatus(reference, amount);
+    const result = await checker.checkPaymentStatus(reference, numericAmount);
 
-    // result biasanya bentuknya { success, data: { status: 'PAID' / ... } }
+    // Struktur result dari library:
+    // { success: true/false, data: { status: 'PAID' | 'UNPAID' | ... , ... } }
+    if (!result || result.success === false) {
+      return res.status(200).json({
+        success: false,
+        message:
+          (result && result.message) ||
+          'Gagal cek status pembayaran dari OrderKuota.',
+        data: result && result.data ? result.data : null
+      });
+    }
+
+    // Sukses
     return res.status(200).json({
       success: true,
-      data: result.data || result
+      data: result.data
     });
   } catch (err) {
-    console.error('ERR_CHECK_PAYMENT', err);
+    console.error('[check-payment] ERROR TIDAK TERDUGA:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Terjadi error di server saat cek pembayaran.'
+    });
+  }
+};    console.error('ERR_CHECK_PAYMENT', err);
     return res.status(500).json({
       success: false,
       message: 'Gagal cek status ke OrderKuota: ' + err.message
