@@ -1,6 +1,5 @@
 // api/pay-status.js
 
-// cache class supaya nggak import berkali-kali
 let PaymentCheckerClass = null;
 
 async function getPaymentChecker() {
@@ -14,10 +13,9 @@ async function getPaymentChecker() {
   });
 }
 
-// ambil pola dari kode bot WA kamu, tapi dipangkas
+// Versi santai: kalau nggak cocok, balikin null aja (bukan error)
 function normalizeCheckerResult(res) {
   if (!res || typeof res !== 'object') return null;
-  if (res.success === false || res.error) return null;
 
   let data = res.data || res.result || res;
   if (Array.isArray(data)) data = data[0] || {};
@@ -34,10 +32,10 @@ function normalizeCheckerResult(res) {
 
   const amount = Number(
     data.amount ||
-    data.gross_amount ||
-    data.total ||
-    data.nominal ||
-    0
+      data.gross_amount ||
+      data.total ||
+      data.nominal ||
+      0
   );
 
   const ref = (
@@ -58,7 +56,7 @@ function normalizeCheckerResult(res) {
     data.settled_at ||
     null;
 
-  return { status, amount, ref, paidAt, raw: data };
+  return { status, amount, ref, paidAt };
 }
 
 module.exports = async (req, res) => {
@@ -80,23 +78,15 @@ module.exports = async (req, res) => {
 
     const checker = await getPaymentChecker();
     const nominal = amount ? Number(amount) : undefined;
+
     const rawResult = await checker.checkPaymentStatus(ref, nominal);
+    const normalized = normalizeCheckerResult(rawResult);
 
-    const n = normalizeCheckerResult(rawResult);
-
-    if (!n) {
-      // respon nggak kebaca, lempar balik buat debug
-      return res.status(200).json({
-        success: false,
-        message: 'Response payment tidak bisa dinormalisasi',
-        raw: rawResult
-      });
-    }
-
-    // inilah bentuk final yang bakal dibaca frontend
+    // Selalu success: true kalau fetch ke provider berhasil
     return res.status(200).json({
       success: true,
-      data: n
+      data: normalized, // bisa null kalau nggak kebaca
+      raw: rawResult     // bentuk asli dari PaymentChecker
     });
   } catch (err) {
     console.error('pay-status error:', err);
