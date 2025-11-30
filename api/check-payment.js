@@ -1,19 +1,5 @@
 // api/check-payment.js
-// Cek status pembayaran ke OrderKuota lewat autoft-qris
-
-let PaymentChecker;
-
-// Coba require versi utama dulu
-try {
-  ({ PaymentChecker } = require('autoft-qris'));
-} catch (e) {
-  // Fallback ke file .cjs kalau entry utama pakai ESM
-  try {
-    PaymentChecker = require('autoft-qris/src/payment-checker.cjs');
-  } catch (e2) {
-    console.error('Gagal load PaymentChecker dari autoft-qris', e, e2);
-  }
-}
+// Cek status pembayaran ke OrderKuota lewat autoft-qris (versi aman)
 
 module.exports = async (req, res) => {
   // Hanya izinkan GET
@@ -23,7 +9,26 @@ module.exports = async (req, res) => {
       .json({ success: false, message: 'Method not allowed. Use GET.' });
   }
 
-  // Kalau library gagal di-load, jangan crash, balas JSON aja
+  let PaymentChecker;
+
+  try {
+    // Coba import ESM / CJS secara dinamis
+    const mod = await import('autoft-qris').catch(() => null);
+
+    if (mod && mod.PaymentChecker) {
+      PaymentChecker = mod.PaymentChecker;
+    } else {
+      // fallback: coba langsung file CJS
+      const cjsMod = await import('autoft-qris/src/payment-checker.cjs').catch(
+        () => null
+      );
+      PaymentChecker = cjsMod && (cjsMod.default || cjsMod.PaymentChecker);
+    }
+  } catch (e) {
+    console.error('Gagal import autoft-qris:', e);
+  }
+
+  // Kalau library gagal di-load, balas JSON (jangan crash)
   if (!PaymentChecker) {
     return res.status(500).json({
       success: false,
@@ -35,7 +40,7 @@ module.exports = async (req, res) => {
     const { reference, amount } = req.query || {};
     const amt = Number(amount);
 
-    // Kalau kamu buka /api/check-payment tanpa param, masuknya ke sini:
+    // Kalau kamu buka /api/check-payment tanpa param, masuk ke sini
     if (!reference || !amt || amt <= 0) {
       return res.status(400).json({
         success: false,
@@ -63,6 +68,16 @@ module.exports = async (req, res) => {
     const result = await checker.checkPaymentStatus(reference, amt);
 
     // Terusin apa adanya ke frontend
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error('check-payment error', err);
+    return res.status(500).json({
+      success: false,
+      message:
+        err.message || 'Terjadi kesalahan di server saat cek pembayaran.'
+    });
+  }
+};    // Terusin apa adanya ke frontend
     return res.status(200).json(result);
   } catch (err) {
     console.error('check-payment error', err);
