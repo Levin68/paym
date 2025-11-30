@@ -26,7 +26,6 @@ module.exports = async (req, res) => {
     const nominal = amount ? Number(amount) : undefined;
     const result = await checker.checkPaymentStatus(ref, nominal);
 
-    // lempar balik apa adanya biar gampang debug
     return res.status(200).json(result);
   } catch (err) {
     console.error('pay-status error:', err);
