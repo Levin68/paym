@@ -67,8 +67,4 @@ module.exports = async (req, res) => {
       .status(500)
       .json({ success: false, message: err.message || 'Internal server error' });
   }
-};    return res
-      .status(500)
-      .json({ success: false, message: err.message || 'Internal server error' });
-  }
 };
