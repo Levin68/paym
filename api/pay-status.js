@@ -1,4 +1,3 @@
-// api/pay-status.js
 const { PaymentChecker } = require('autoft-qris');
 
 const checker = new PaymentChecker({
