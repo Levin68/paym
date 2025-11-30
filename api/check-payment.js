@@ -89,7 +89,6 @@ module.exports = async (req, res) => {
     });
   }
 };  }
-
   if (typeof PaymentChecker !== 'function') {
     console.error('[check-payment] PaymentChecker bukan function/class:', PaymentChecker);
     return res.status(500).json({
