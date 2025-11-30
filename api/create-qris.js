@@ -56,13 +56,7 @@ module.exports = async (req, res) => {
         'Server error di create-qris: ' + (err && err.message ? err.message : String(err))
     });
   }
-};      }
-    });
-  } catch (err) {
-    console.error('create-qris error:', err);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error di create-qris: ' + err.message
+};      message: 'Server error di create-qris: ' + err.message
     });
   }
 };
