@@ -1,8 +1,26 @@
 // api/check-payment.js
 
-module.exports = async (req, res) => {
-  console.log('[check-payment] request', req.method, req.query);
+require('dotenv').config();
 
+function resolvePaymentChecker() {
+  // Di sini kita coba ambil PaymentChecker dari berbagai bentuk export
+  const mod = require('autoft-qris'); // pastikan package sudah ke-install
+
+  let PaymentChecker =
+    mod.PaymentChecker ||
+    (mod.default && mod.default.PaymentChecker) ||
+    mod.default ||
+    mod;
+
+  if (typeof PaymentChecker !== 'function') {
+    throw new Error('PaymentChecker tidak ditemukan di export autoft-qris');
+  }
+
+  return PaymentChecker;
+}
+
+module.exports = async (req, res) => {
+  // HANYA izinkan GET, karena frontend pakai GET
   if (req.method !== 'GET') {
     return res.status(405).json({
       success: false,
@@ -19,50 +37,58 @@ module.exports = async (req, res) => {
     });
   }
 
-  const { ORKUT_AUTH_USERNAME, ORKUT_AUTH_TOKEN } = process.env;
-
-  if (!ORKUT_AUTH_USERNAME || !ORKUT_AUTH_TOKEN) {
-    return res.status(500).json({
-      success: false,
-      message:
-        'ENV ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum diset di Vercel.'
-    });
-  }
-
-  let PaymentChecker;
-
-  // --- coba require (CommonJS) dulu ---
   try {
-    const cjs = require('autoft-qris');
-    console.log('[check-payment] require(autoft-qris) keys:', Object.keys(cjs));
+    // 1. Ambil kredensial dari ENV
+    const auth_username = process.env.ORKUT_AUTH_USERNAME;
+    const auth_token = process.env.ORKUT_AUTH_TOKEN;
 
-    PaymentChecker =
-      cjs.PaymentChecker ||
-      (cjs.default && cjs.default.PaymentChecker) ||
-      cjs.default;
-
-  } catch (requireErr) {
-    console.log('[check-payment] require gagal, coba import...', requireErr);
-
-    // --- kalau require gagal, fallback ke dynamic import (ESM) ---
-    try {
-      const mod = await import('autoft-qris');
-      console.log('[check-payment] import(autoft-qris) keys:', Object.keys(mod));
-
-      PaymentChecker =
-        mod.PaymentChecker ||
-        (mod.default && mod.default.PaymentChecker) ||
-        mod.default;
-    } catch (importErr) {
-      console.error('[check-payment] import juga gagal:', importErr);
+    if (!auth_username || !auth_token) {
       return res.status(500).json({
         success: false,
         message:
-          'Server gagal load PaymentChecker dari autoft-qris: ' +
-          importErr.message
+          'Env ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum diset di Vercel.'
       });
     }
+
+    // 2. Load PaymentChecker dari autoft-qris (semua error di-catch)
+    let PaymentChecker;
+    try {
+      PaymentChecker = resolvePaymentChecker();
+    } catch (err) {
+      console.error('Gagal load PaymentChecker:', err);
+      return res.status(500).json({
+        success: false,
+        message: `Server gagal load PaymentChecker dari autoft-qris: ${err.message}`
+      });
+    }
+
+    // 3. Buat instance dan cek status
+    const checker = new PaymentChecker({
+      auth_token,
+      auth_username
+    });
+
+    const numericAmount = Number(amount);
+    if (!numericAmount || numericAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount tidak valid.'
+      });
+    }
+
+    const result = await checker.checkPaymentStatus(reference, numericAmount);
+
+    // Library autoft-qris udah balikin bentuk { success, data, message }
+    // Kita forward aja ke frontend
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error('Error di /api/check-payment:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error saat cek pembayaran.'
+    });
   }
+};  }
 
   if (typeof PaymentChecker !== 'function') {
     console.error('[check-payment] PaymentChecker bukan function/class:', PaymentChecker);
