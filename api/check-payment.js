@@ -1,68 +1,65 @@
 // api/check-payment.js
-// Cek status pembayaran pakai PaymentChecker dari autoft-qris
+
+let PaymentChecker;
+
+try {
+  // ambil dari CJS build yang sama seperti QRISGenerator
+  ({ PaymentChecker } = require('autoft-qris/dist/cjs/autoft-qris.cjs'));
+} catch (err) {
+  console.error('Gagal load PaymentChecker dari autoft-qris:', err);
+}
 
 module.exports = async (req, res) => {
-  // Hanya GET
   if (req.method !== 'GET') {
-    return res.status(405).json({
-      success: false,
-      message: 'Method not allowed. Use GET.'
-    });
-  }
-
-  const { reference, amount } = req.query || {};
-  const amt = Number(amount);
-
-  if (!reference || !amt || amt <= 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Parameter reference / amount tidak valid.'
-    });
-  }
-
-  let PaymentChecker;
-  try {
-    const mod = await import('autoft-qris');
-    PaymentChecker =
-      mod.PaymentChecker || (mod.default && mod.default.PaymentChecker);
-  } catch (e) {
-    console.error('Gagal import autoft-qris PaymentChecker:', e);
-    return res.status(500).json({
-      success: false,
-      message:
-        'Server gagal load PaymentChecker dari autoft-qris: ' + e.message
-    });
+    return res
+      .status(405)
+      .json({ success: false, message: 'Method not allowed. Use GET.' });
   }
 
   if (!PaymentChecker) {
     return res.status(500).json({
       success: false,
-      message:
-        'PaymentChecker tidak ditemukan di autoft-qris. Pastikan versi package 0.0.9 dan kompatibel.'
+      message: 'Server gagal load PaymentChecker dari autoft-qris.'
     });
   }
 
-  const auth_username = process.env.ORKUT_AUTH_USERNAME;
-  const auth_token = process.env.ORKUT_AUTH_TOKEN;
+  const { reference, amount } = req.query;
 
-  if (!auth_username || !auth_token) {
-    return res.status(500).json({
+  if (!reference || !amount) {
+    return res.status(400).json({
       success: false,
-      message:
-        'ENV belum lengkap. Set ORKUT_AUTH_USERNAME & ORKUT_AUTH_TOKEN di Vercel.'
+      message: 'reference dan amount wajib diisi.'
     });
   }
+
+  const numericAmount = Number(amount);
+  if (!numericAmount || numericAmount <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'amount tidak valid.'
+    });
+  }
+
+  const checker = new PaymentChecker({
+    auth_token: process.env.ORKUT_AUTH_TOKEN,
+    auth_username: process.env.ORKUT_AUTH_USERNAME
+  });
 
   try {
-    const checker = new PaymentChecker({
-      auth_token,
-      auth_username
-    });
+    const result = await checker.checkPaymentStatus(reference, numericAmount);
 
-    const result = await checker.checkPaymentStatus(reference, amt);
-    // Biasanya: { success, data: { status }, message? }
-    return res.status(200).json(result);
+    return res.status(200).json({
+      success: true,
+      data: result.data || result
+    });
   } catch (err) {
+    console.error('check-payment error:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Gagal cek status pembayaran.'
+    });
+  }
+};  } catch (err) {
     console.error('check-payment error:', err);
     return res.status(500).json({
       success: false,
