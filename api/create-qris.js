@@ -1,5 +1,6 @@
-const { QRISGenerator } = require('autoft-qris');
+// api/create-qris.js
 
+// config boleh tetap di top-level
 const config = {
   storeName: process.env.STORE_NAME || 'NEVERMORE',
   auth_username: process.env.ORKUT_AUTH_USERNAME,
@@ -15,6 +16,7 @@ function generateRef(prefix = 'REF') {
 }
 
 module.exports = async (req, res) => {
+  // ⛔ hanya izinkan POST
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res
@@ -22,7 +24,22 @@ module.exports = async (req, res) => {
       .json({ success: false, message: 'Method not allowed' });
   }
 
+  // 1) coba require autoft-qris di sini (biar error bisa ditangkap)
+  let QRISGenerator;
   try {
+    ({ QRISGenerator } = require('autoft-qris'));
+  } catch (e) {
+    console.error('ERROR require autoft-qris:', e);
+    return res.status(500).json({
+      success: false,
+      stage: 'require-autoft-qris',
+      message: e.message,
+      stack: e.stack
+    });
+  }
+
+  try {
+    // 2) baca body (Vercel kadang kirim string mentah)
     const body =
       typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     const { amount, theme = 'theme1' } = body;
@@ -63,8 +80,11 @@ module.exports = async (req, res) => {
     });
   } catch (err) {
     console.error('create-qris error:', err);
-    return res
-      .status(500)
-      .json({ success: false, message: err.message || 'Internal server error' });
+    return res.status(500).json({
+      success: false,
+      stage: 'handler',
+      message: err.message || 'Internal server error',
+      stack: err.stack
+    });
   }
 };
