@@ -8,7 +8,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "autoft-qris": "^0.0.9"
+    "autoft-qris": "^0.0.9",
+    "dotenv": "^16.0.0"
   },
   "engines": {
     "node": "20.x"
