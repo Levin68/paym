@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function generateQr() {
     const amount = Number(amountInput.value);
-    const theme = 'theme1'; // fixed, nggak pake dropdown tema-temaan
+    const theme = 'theme1';
 
     if (!amount || amount <= 0) {
       alert('Nominal tidak valid');
@@ -56,14 +56,12 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const res = await fetch('/api/create-qris', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount, theme })
       });
 
       const json = await res.json();
-      if (!json.success) {
+      if (!res.ok || json.success === false) {
         throw new Error(json.message || 'Gagal generate QR');
       }
 
@@ -91,6 +89,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function extractStatusFromResponse(json) {
+    // Normalized dulu
+    if (json && json.data && json.data.status) {
+      return String(json.data.status).toUpperCase();
+    }
+
+    // Kalau nggak ada, coba cari di raw
+    const raw = json && json.raw ? json.raw : json;
+
+    const candidate =
+      (raw &&
+        (raw.status ||
+          raw.payment_status ||
+          raw.transaction_status ||
+          (raw.data && (raw.data.status || raw.data.payment_status)))) ||
+      '';
+
+    return String(candidate || '').toUpperCase();
+  }
+
   async function pollStatus() {
     if (!currentRef) return;
 
@@ -104,24 +122,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch(url);
       const json = await res.json();
 
-      if (!res.ok || json.success === false) {
-        // kalau normalisasi gagal / ada error lain, tampilkan message
-        const msg =
-          json.message ||
-          (res.ok ? 'Gagal membaca status' : 'HTTP ' + res.status);
-        setStatus('error', msg);
+      if (!res.ok) {
+        setStatus('error', 'HTTP ' + res.status);
         return;
       }
 
-      // bentuk dari backend: { success:true, data:{ status, amount, ref, paidAt, raw } }
-      const status =
-        json?.data?.status ||
-        json?.status ||
-        json?.data?.payment_status ||
-        json?.payment_status ||
-        '';
-
-      const upper = String(status || '').toUpperCase();
+      // Backend sekarang SELALU success:true kalau nggak throw
+      const upper = extractStatusFromResponse(json);
 
       const paidStatuses = new Set([
         'PAID',
@@ -141,8 +148,10 @@ document.addEventListener('DOMContentLoaded', () => {
           clearInterval(pollTimer);
           pollTimer = null;
         }
+      } else if (upper) {
+        setStatus('pending', 'Status: ' + upper);
       } else {
-        setStatus('pending', 'Status: ' + (upper || 'MENUNGGU'));
+        setStatus('pending', 'Status: MENUNGGU');
       }
     } catch (err) {
       console.error(err);
