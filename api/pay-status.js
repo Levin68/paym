@@ -9,21 +9,24 @@ const checker = new PaymentChecker({
 module.exports = async (req, res) => {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
-    return res.status(405).json({ success: false, message: 'Method not allowed' });
+    return res
+      .status(405)
+      .json({ success: false, message: 'Method not allowed' });
   }
 
   try {
     const { ref, amount } = req.query;
 
     if (!ref) {
-      return res.status(400).json({ success: false, message: 'ref wajib diisi' });
+      return res
+        .status(400)
+        .json({ success: false, message: 'ref wajib diisi' });
     }
 
     const nominal = amount ? Number(amount) : undefined;
-
     const result = await checker.checkPaymentStatus(ref, nominal);
 
-    // kamu bisa adjust format JSON ini sesuai respons API OrderKuota
+    // lempar balik apa adanya biar gampang debug
     return res.status(200).json(result);
   } catch (err) {
     console.error('pay-status error:', err);
