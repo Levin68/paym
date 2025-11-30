@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function generateQr() {
     const amount = Number(amountInput.value);
-    const theme = 'theme1';
+    const theme = 'theme1'; // kita fix theme1 aja
 
     if (!amount || amount <= 0) {
       alert('Nominal tidak valid');
@@ -89,24 +89,56 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // cari field status DI MANA SAJA di dalam objek JSON
+  function deepFindStatus(obj) {
+    if (!obj || typeof obj !== 'object') return '';
+
+    let found = '';
+
+    function dfs(o) {
+      if (!o || typeof o !== 'object' || found) return;
+      for (const key in o) {
+        if (!Object.prototype.hasOwnProperty.call(o, key)) continue;
+        const v = o[key];
+        const k = key.toLowerCase();
+
+        if (
+          k === 'status' ||
+          k === 'payment_status' ||
+          k === 'transaction_status'
+        ) {
+          if (typeof v === 'string' || typeof v === 'number') {
+            found = String(v);
+            return;
+          }
+        }
+
+        if (v && typeof v === 'object') {
+          dfs(v);
+          if (found) return;
+        }
+      }
+    }
+
+    dfs(obj);
+    return found;
+  }
+
   function extractStatusFromResponse(json) {
-    // Normalized dulu
+    // coba dulu dari data yang sudah dinormalisasi backend
     if (json && json.data && json.data.status) {
       return String(json.data.status).toUpperCase();
     }
 
-    // Kalau nggak ada, coba cari di raw
-    const raw = json && json.raw ? json.raw : json;
+    // kalau nggak ada, coba deep search di raw
+    if (json && json.raw) {
+      const s = deepFindStatus(json.raw);
+      if (s) return s.toUpperCase();
+    }
 
-    const candidate =
-      (raw &&
-        (raw.status ||
-          raw.payment_status ||
-          raw.transaction_status ||
-          (raw.data && (raw.data.status || raw.data.payment_status)))) ||
-      '';
-
-    return String(candidate || '').toUpperCase();
+    // terakhir, deep search di objek penuh (kalau backend belum pakai field raw)
+    const s2 = deepFindStatus(json);
+    return s2 ? s2.toUpperCase() : '';
   }
 
   async function pollStatus() {
@@ -127,7 +159,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Backend sekarang SELALU success:true kalau nggak throw
       const upper = extractStatusFromResponse(json);
 
       const paidStatuses = new Set([
