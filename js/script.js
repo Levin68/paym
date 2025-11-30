@@ -1,209 +1,225 @@
-// js/script.js
+// public/js/script.js
 
-document.addEventListener('DOMContentLoaded', () => {
-  const btn = document.getElementById('btn-generate');
-  const amountInput = document.getElementById('amount');
-  const qrSection = document.getElementById('qr-section');
-  const qrPlaceholder = document.getElementById('qr-placeholder');
-  const qrImg = document.getElementById('qr-img');
-  const refText = document.getElementById('ref-text');
-  const amountText = document.getElementById('amount-text');
-  const statusBox = document.getElementById('status-box');
+(() => {
+  const amountInput = document.getElementById('amountInput');
+  const generateBtn = document.getElementById('generateBtn');
+  const qrImage = document.getElementById('qrImage');
+  const currentRefEl = document.getElementById('currentRef');
+  const currentAmountEl = document.getElementById('currentAmount');
+  const statusBadge = document.getElementById('statusBadge');
 
-  let currentRef = null;
-  let currentAmount = null;
+  let activeRef = null;
+  let activeAmount = null;
   let pollTimer = null;
-  let pollStart = null;
 
+  // status2 yang dianggap "lunas"
+  const paidStatuses = new Set([
+    'PAID',
+    'SUCCESS',
+    'COMPLETED',
+    'SETTLEMENT',
+    'CAPTURE',
+    'CONFIRMED',
+    'SUCCESSFUL',
+    'PAID_OFF',
+    'DONE'
+  ]);
+
+  // ===== helper DOM =====
   function formatRupiah(n) {
-    n = Number(n || 0);
-    return 'Rp ' + n.toLocaleString('id-ID');
+    const num = Number(n || 0);
+    return 'Rp ' + num.toLocaleString('id-ID');
   }
 
-  function setStatus(kind, message) {
-    let badgeClass = 'badge-pending';
-    let statusClass = 'status-pending';
+  function setStatusWaiting() {
+    statusBadge.textContent = 'STATUS: MENUNGGU';
+    statusBadge.classList.remove(
+      'status-pill--paid',
+      'status-pill--failed',
+      'status-pill--unknown'
+    );
+    statusBadge.classList.add('status-pill--waiting');
+  }
 
-    if (kind === 'paid') {
-      badgeClass = 'badge-paid';
-      statusClass = 'status-paid';
-    } else if (kind === 'error') {
-      badgeClass = 'badge-error';
-      statusClass = 'status-error';
+  function setStatusPaid(text) {
+    statusBadge.textContent = text || 'STATUS: BERHASIL';
+    statusBadge.classList.remove(
+      'status-pill--waiting',
+      'status-pill--failed',
+      'status-pill--unknown'
+    );
+    statusBadge.classList.add('status-pill--paid');
+  }
+
+  function setStatusFailed(text) {
+    statusBadge.textContent =
+      text || 'STATUS: GAGAL / DITOLAK';
+    statusBadge.classList.remove(
+      'status-pill--waiting',
+      'status-pill--paid',
+      'status-pill--unknown'
+    );
+    statusBadge.classList.add('status-pill--failed');
+  }
+
+  function setStatusUnknown(text) {
+    statusBadge.textContent =
+      text || 'STATUS: TIDAK DIKETAHUI';
+    statusBadge.classList.remove(
+      'status-pill--waiting',
+      'status-pill--paid',
+      'status-pill--failed'
+    );
+    statusBadge.classList.add('status-pill--unknown');
+  }
+
+  // ===== helper ambil status dari JSON backend =====
+  function extractStatusFromResponse(json) {
+    if (!json || typeof json !== 'object') return null;
+
+    if (typeof json.status === 'string') {
+      return json.status;
     }
 
-    statusBox.innerHTML =
-      '<span class="' +
-      badgeClass +
-      ' ' +
-      statusClass +
-      '"><span class="status-icon"></span>' +
-      message +
-      '</span>';
+    if (
+      json.normalized &&
+      typeof json.normalized.status === 'string'
+    ) {
+      return json.normalized.status;
+    }
+
+    if (
+      json.data &&
+      typeof json.data.status === 'string'
+    ) {
+      return json.data.status;
+    }
+
+    return null;
   }
 
-  async function generateQr() {
-    const amount = Number(amountInput.value);
-    const theme = 'theme1';
+  // ===== generate QR =====
+  async function handleGenerate() {
+    const rawAmount = amountInput.value.trim();
+    const amount = Number(rawAmount);
 
-    if (!amount || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       alert('Nominal tidak valid');
       return;
     }
 
-    btn.disabled = true;
-    btn.textContent = 'Membuat QR...';
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Generating...';
 
     try {
       const res = await fetch('/api/create-qris', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, theme })
+        body: JSON.stringify({
+          amount,
+          theme: 'theme1'
+        })
       });
 
       const json = await res.json();
-      if (!res.ok || json.success === false) {
-        throw new Error(json.message || 'Gagal generate QR');
+
+      if (!res.ok || !json || json.success === false) {
+        console.error('create-qris error:', json);
+        alert(
+          json && json.message
+            ? json.message
+            : 'Gagal generate QRIS'
+        );
+        return;
       }
 
-      const { ref, qrImage, amount: amt } = json.data;
+      // asumsi response: { success:true, data:{ ref, amount, qrImage } }
+      const data = json.data || json;
+      activeRef = data.ref;
+      activeAmount = data.amount || amount;
 
-      currentRef = ref;
-      currentAmount = amt;
+      if (data.qrImage) {
+        qrImage.src = data.qrImage; // sudah data:image/png;base64,...
+      }
 
-      qrImg.src = qrImage;
-      qrPlaceholder.style.display = 'none';
-      qrSection.style.display = 'block';
+      currentRefEl.textContent = activeRef || '-';
+      currentAmountEl.textContent = formatRupiah(activeAmount);
+      setStatusWaiting();
 
-      refText.textContent = ref;
-      amountText.textContent = formatRupiah(amt);
-      setStatus('pending', 'Menunggu pembayaran...');
-
-      // reset polling
+      // mulai polling
       if (pollTimer) clearInterval(pollTimer);
-      pollStart = Date.now();
-
-      // cek SEKALI LANGSUNG
-      await pollStatus();
-
-      // lalu polling tiap 1 detik
-      pollTimer = setInterval(pollStatus, 1000);
-    } catch (err) {
-      console.error(err);
-      setStatus('error', 'Error: ' + err.message);
+      pollTimer = setInterval(checkStatusOnce, 2000);
+    } catch (e) {
+      console.error(e);
+      alert('Terjadi kesalahan saat generate QR');
     } finally {
-      btn.disabled = false;
-      btn.textContent = 'Generate QRIS';
+      generateBtn.disabled = false;
+      generateBtn.textContent = 'Generate QRIS';
     }
   }
 
-  // deep search status di JSON, nama field bebas
-  function deepFindStatus(obj) {
-    if (!obj || typeof obj !== 'object') return '';
-
-    let found = '';
-
-    function dfs(o) {
-      if (!o || typeof o !== 'object' || found) return;
-      for (const key in o) {
-        if (!Object.prototype.hasOwnProperty.call(o, key)) continue;
-        const v = o[key];
-        const k = key.toLowerCase();
-
-        if (
-          k === 'status' ||
-          k === 'payment_status' ||
-          k === 'transaction_status'
-        ) {
-          if (typeof v === 'string' || typeof v === 'number') {
-            found = String(v);
-            return;
-          }
-        }
-
-        if (v && typeof v === 'object') {
-          dfs(v);
-          if (found) return;
-        }
-      }
-    }
-
-    dfs(obj);
-    return found;
-  }
-
-  function extractStatusFromResponse(json) {
-    if (json && json.data && json.data.status) {
-      return String(json.data.status).toUpperCase();
-    }
-
-    if (json && json.raw) {
-      const s = deepFindStatus(json.raw);
-      if (s) return s.toUpperCase();
-    }
-
-    const s2 = deepFindStatus(json);
-    return s2 ? s2.toUpperCase() : '';
-  }
-
-  async function pollStatus() {
-    if (!currentRef) return;
-
-    // safety: stop polling setelah 5 menit
-    if (pollStart && Date.now() - pollStart > 5 * 60 * 1000) {
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
-      }
-      setStatus('pending', 'Timeout: tidak ada pembayaran terdeteksi');
-      return;
-    }
+  // ===== cek status sekali =====
+  async function checkStatusOnce() {
+    if (!activeRef || !activeAmount) return;
 
     try {
       const url =
         '/api/pay-status?ref=' +
-        encodeURIComponent(currentRef) +
+        encodeURIComponent(activeRef) +
         '&amount=' +
-        encodeURIComponent(currentAmount || '');
+        encodeURIComponent(activeAmount);
 
-      const res = await fetch(url);
-      const json = await res.json();
+      const res = await fetch(url, { method: 'GET' });
+      const json = await res.json().catch(() => null);
 
-      if (!res.ok) {
-        setStatus('error', 'HTTP ' + res.status);
+      if (!res.ok || !json) {
+        console.warn('pay-status tidak OK', res.status);
         return;
       }
 
-      const upper = extractStatusFromResponse(json);
+      const statusRaw = extractStatusFromResponse(json);
+      if (!statusRaw) {
+        // belum ada info → biarin MENUNGGU
+        return;
+      }
 
-      const paidStatuses = new Set([
-        'PAID',
-        'SUCCESS',
-        'COMPLETED',
-        'SETTLEMENT',
-        'CAPTURE',
-        'CONFIRMED',
-        'SUCCESSFUL',
-        'PAID_OFF',
-        'DONE'
-      ]);
+      const status = statusRaw.toString().toUpperCase();
 
-      if (paidStatuses.has(upper)) {
-        setStatus('paid', 'Pembayaran berhasil (' + upper + ')');
+      if (paidStatuses.has(status)) {
+        setStatusPaid(`STATUS: BERHASIL (${status})`);
         if (pollTimer) {
           clearInterval(pollTimer);
           pollTimer = null;
         }
-      } else if (upper) {
-        setStatus('pending', 'Status: ' + upper);
+      } else if (
+        ['FAILED', 'CANCEL', 'CANCELLED', 'EXPIRED', 'VOID', 'REJECT', 'DENY', 'ERROR'].includes(
+          status
+        )
+      ) {
+        setStatusFailed(`STATUS: ${status}`);
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
       } else {
-        setStatus('pending', 'Status: MENUNGGU');
+        // status lain (PENDING, WAITING, dll) → cuma update teks, tetap kuning
+        statusBadge.textContent = `STATUS: ${status}`;
+        statusBadge.classList.remove(
+          'status-pill--paid',
+          'status-pill--failed',
+          'status-pill--unknown'
+        );
+        statusBadge.classList.add('status-pill--waiting');
       }
-    } catch (err) {
-      console.error(err);
-      setStatus('error', 'Error cek status');
+    } catch (e) {
+      console.error('checkStatus error', e);
+      // kalau error sekali-sekali, biarin aja, nanti interval berikutnya coba lagi
     }
   }
 
-  btn.addEventListener('click', generateQr);
-});
+  // ===== init =====
+  generateBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    handleGenerate();
+  });
+})();
