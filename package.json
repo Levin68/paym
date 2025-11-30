@@ -1,17 +1,9 @@
 {
-  "name": "levpay-qris-simple",
+  "name": "paym",
   "version": "1.0.0",
-  "description": "LevPay QRIS simple (pure qris string + vercel serverless)",
   "main": "index.js",
-  "scripts": {
-    "dev": "vercel dev"
-  },
   "license": "MIT",
   "dependencies": {
-    "autoft-qris": "^0.0.9",
-    "dotenv": "^16.0.0"
-  },
-  "engines": {
-    "node": "20.x"
+    "autoft-qris": "0.0.9"
   }
 }
