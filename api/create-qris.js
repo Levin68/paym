@@ -1,11 +1,22 @@
 // api/create-qris.js
-const { QRISGenerator } = require('autoft-qris');
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({
       success: false,
       message: 'Method not allowed. Use POST.'
+    });
+  }
+
+  // 1) Coba load autoft-qris DI DALAM handler
+  let QRISGenerator;
+  try {
+    ({ QRISGenerator } = require('autoft-qris'));
+  } catch (err) {
+    console.error('Gagal load autoft-qris:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Server gagal load library autoft-qris: ' + (err.message || String(err))
     });
   }
 
@@ -27,7 +38,6 @@ module.exports = async (req, res) => {
       baseQrString: process.env.BASE_QR_STRING
     };
 
-    // Cek env lengkap belum
     if (!config.auth_username || !config.auth_token || !config.baseQrString) {
       return res.status(500).json({
         success: false,
@@ -35,9 +45,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Bikin instance generator di dalam handler (biar error bisa ke-catch)
     const qrisGen = new QRISGenerator(config, 'theme1');
-
     const reference = 'REF' + Date.now();
     const qrString = qrisGen.generateQrString(amount);
 
