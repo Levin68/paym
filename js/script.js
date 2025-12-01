@@ -1,165 +1,196 @@
 // js/script.js
 
-// Coba ambil element; kalau nggak ada jangan bikin script meledak
-const amountInput = document.getElementById('amount');
-const createQRBtn = document.getElementById('createQRBtn');
-const errorText = document.getElementById('errorText');
+// Ambil elemen DOM
+const amountInput = document.getElementById("amount");
+const btnGenerate = document.getElementById("btn-generate");
 
-const resultBox = document.getElementById('resultBox');
-const refText = document.getElementById('refText');
-const statusText = document.getElementById('statusText');
-const qrcodeContainer = document.getElementById('qrcode');
+const qrSection = document.getElementById("qr-section");      // wrapper IMG
+const qrPlaceholder = document.getElementById("qr-placeholder");
+const qrImg = document.getElementById("qr-img");
+
+const refText = document.getElementById("ref-text");
+const amountText = document.getElementById("amount-text");
+const statusBox = document.getElementById("status-box");
 
 let currentRef = null;
 let currentAmount = null;
 let pollTimer = null;
 
-// --- HELPER: ERROR UI ---
-function setError(msg) {
-  if (!errorText) {
-    console.error('errorText element tidak ditemukan, msg:', msg);
-    return;
-  }
-  if (!msg) {
-    errorText.classList.add('hidden');
-    errorText.textContent = '';
-    return;
-  }
-  errorText.textContent = msg;
-  errorText.classList.remove('hidden');
+// ---------------- Helper kecil ----------------
+
+function formatRupiah(n) {
+  const num = Number(n || 0);
+  return "Rp" + num.toLocaleString("id-ID");
 }
 
-// --- TAMPILIN QR DI DIV #qrcode ---
-function renderQR(qrString) {
-  if (!qrcodeContainer) {
-    console.error('qrcodeContainer (#qrcode) tidak ketemu');
-    return;
+function setStatus(type, msg) {
+  // type: idle | pending | paid | error
+  if (!statusBox) return;
+
+  let badgeClass = "badge-pending";
+  let statusClass = "status-pending";
+  let label = "MENUNGGU";
+
+  if (type === "paid") {
+    badgeClass = "badge-paid";
+    statusClass = "status-paid";
+    label = "PAID";
+  } else if (type === "error") {
+    badgeClass = "badge-error";
+    statusClass = "status-error";
+    label = "ERROR";
+  } else if (type === "idle") {
+    badgeClass = "badge-pending";
+    statusClass = "status-pending";
+    label = "IDLE";
   }
 
-  if (!window.QRCode) {
-    console.error('Library QRCodeJS belum termuat');
-    setError('Gagal memuat library QRCode.');
-    return;
-  }
+  const text = msg || (type === "paid"
+    ? "Pembayaran berhasil terkonfirmasi."
+    : type === "pending"
+    ? "Silakan scan QRIS dan lakukan pembayaran."
+    : type === "error"
+    ? "Terjadi kesalahan saat memproses."
+    : "Belum ada transaksi aktif.");
 
-  qrcodeContainer.innerHTML = '';
-
-  try {
-    new QRCode(qrcodeContainer, {
-      text: qrString,
-      width: 256,
-      height: 256,
-      correctLevel: QRCode.CorrectLevel.M
-    });
-  } catch (e) {
-    console.error('Gagal render QR:', e);
-    setError('Gagal menampilkan QR di halaman.');
-  }
+  statusBox.innerHTML = `
+    <div class="${statusClass}">
+      <span class="${badgeClass}">
+        <span class="status-icon"></span>
+        <span>${label}</span>
+      </span>
+      <span style="margin-left:6px;">${text}</span>
+    </div>
+  `;
 }
 
-// --- PANGGIL /api/create-qris ---
-async function createQR() {
-  setError('');
+function showPlaceholder() {
+  if (qrSection) qrSection.style.display = "none";
+  if (qrPlaceholder) qrPlaceholder.style.display = "block";
+  setStatus("idle");
+}
 
-  if (!amountInput) {
-    console.error('Element #amount tidak ketemu');
-    setError('Form nominal tidak ditemukan di halaman.');
-    return;
-  }
+function showQR() {
+  if (qrPlaceholder) qrPlaceholder.style.display = "none";
+  if (qrSection) qrSection.style.display = "block";
+}
+
+// ---------------- Panggil /api/create-qris ----------------
+
+async function handleCreateQR() {
+  if (!amountInput) return;
 
   const amount = Number(amountInput.value);
 
   if (!amount || amount <= 0) {
-    setError('Nominal belum diisi atau tidak valid.');
+    setStatus("error", "Nominal belum diisi atau tidak valid.");
     return;
   }
 
+  // Matikan polling lama kalau ada
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
   try {
-    if (createQRBtn) {
-      createQRBtn.disabled = true;
-      createQRBtn.textContent = 'Membuat QR...';
+    if (btnGenerate) {
+      btnGenerate.disabled = true;
+      btnGenerate.innerText = "Generating...";
     }
 
-    const res = await fetch('/api/create-qris', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount })
+    setStatus("pending", "Menghubungi server untuk membuat QRIS...");
+
+    const res = await fetch("/api/create-qris", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount }),
     });
 
     const data = await res.json().catch(() => null);
-
-    console.log('[create-qris] response:', data);
+    console.log("[create-qris] response:", data);
 
     if (!res.ok || !data || data.success === false) {
       const msg =
         (data && data.message) ||
-        `Gagal membuat QR (HTTP ${res.status})`;
-      setError(msg);
+        `Gagal membuat QRIS (HTTP ${res.status}).`;
+      setStatus("error", msg);
+      showPlaceholder();
       return;
     }
 
-    // payload utama
     const payload = data.data || {};
 
-    // reference bisa beda nama
     const reference =
       payload.reference ||
       payload.ref ||
-      payload.Reference ||
-      payload.id;
-
-    // amount fallback ke input kalau kosong
-    const amt = Number(
-      payload.amount != null ? payload.amount : amount
-    );
-
-    // nama field QR string juga kita amankan
-    const qrString =
-      payload.qrString ||
-      payload.qr_string ||
-      payload.qr ||
+      payload.id ||
       null;
 
-    if (!qrString) {
-      console.error('qrString tidak ada di data:', payload);
-      setError('Server tidak mengirim qrString. Cek response /api/create-qris.');
+    const nominal =
+      payload.amount != null ? Number(payload.amount) : amount;
+
+    const qrImage =
+      payload.qrImage ||
+      payload.qr_image ||
+      null;
+
+    const qrString = payload.qrString || payload.qr_string || null;
+
+    if (!qrImage && !qrString) {
+      setStatus("error", "Server tidak mengirim qrImage / qrString.");
+      showPlaceholder();
       return;
     }
 
-    currentRef = reference || null;
-    currentAmount = amt;
+    // Set state global
+    currentRef = reference;
+    currentAmount = nominal;
 
     if (refText) {
-      refText.textContent = reference || '-';
+      refText.textContent = reference || "—";
+    }
+    if (amountText) {
+      amountText.textContent = formatRupiah(nominal);
     }
 
-    if (statusText) {
-      statusText.textContent = 'Silakan scan QR dan lakukan pembayaran...';
-      statusText.classList.remove('text-emerald-300', 'text-red-300');
-      statusText.classList.add('text-amber-300');
+    // Tampilkan QR
+    if (qrImg) {
+      if (qrImage) {
+        // kalau backend sudah kirim base64 siap pakai
+        qrImg.src = qrImage;
+      } else if (qrString) {
+        // Fallback: bikin QR via API publik (URL bisa agak panjang tapi masih aman)
+        const encoded = encodeURIComponent(qrString);
+        qrImg.src =
+          "https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=" +
+          encoded;
+      }
     }
 
-    renderQR(qrString);
+    showQR();
+    setStatus(
+      "pending",
+      "QRIS siap. Silakan scan. Sistem akan cek status tiap beberapa detik."
+    );
 
-    if (resultBox) {
-      resultBox.classList.remove('hidden');
-    }
-
-    // kalau mau auto cek status, buka komen ini:
-    // startPolling();
+    // Mulai polling status
+    startPolling();
   } catch (e) {
-    console.error('createQR error:', e);
-    setError('Terjadi kesalahan saat membuat QR.');
+    console.error("create-qris error:", e);
+    setStatus("error", "Terjadi kesalahan pada jaringan / server.");
+    showPlaceholder();
   } finally {
-    if (createQRBtn) {
-      createQRBtn.disabled = false;
-      createQRBtn.textContent = 'Buat QR';
+    if (btnGenerate) {
+      btnGenerate.disabled = false;
+      btnGenerate.innerText = "Generate QRIS";
     }
   }
 }
 
-// --- OPSIONAL: PANGGIL /api/pay-status ---
-async function checkPayment() {
+// ---------------- Panggil /api/pay-status ----------------
+
+async function checkPaymentStatus() {
   if (!currentRef || !currentAmount) return;
 
   try {
@@ -170,60 +201,58 @@ async function checkPayment() {
 
     const res = await fetch(url);
     const data = await res.json().catch(() => null);
-
-    console.log('[pay-status] response:', data);
+    console.log("[pay-status] response:", data);
 
     if (!res.ok || !data || data.success === false) {
-      console.warn(
-        'Gagal cek pembayaran:',
-        (data && data.message) || res.statusText
-      );
+      // Jangan langsung dianggap error fatal, bisa saja rate limit
       return;
     }
 
-    const status = (data.data && data.data.status) || 'UNKNOWN';
+    const status =
+      (data.data && data.data.status) ||
+      data.status ||
+      "UNKNOWN";
 
-    if (!statusText) return;
+    const upper = String(status).toUpperCase();
 
-    if (status === 'PAID') {
-      statusText.textContent = '✅ Pembayaran berhasil (PAID)';
-      statusText.classList.remove('text-amber-300', 'text-red-300');
-      statusText.classList.add('text-emerald-300');
-
+    if (upper === "PAID" || upper === "SUCCESS") {
+      setStatus("paid");
       if (pollTimer) {
         clearInterval(pollTimer);
         pollTimer = null;
       }
-    } else if (status === 'UNPAID') {
-      statusText.textContent = 'Menunggu pembayaran...';
-      statusText.classList.remove('text-emerald-300', 'text-red-300');
-      statusText.classList.add('text-amber-300');
+    } else if (upper === "UNPAID" || upper === "PENDING") {
+      setStatus("pending", "Menunggu pembayaran...");
     } else {
-      statusText.textContent = `Status: ${status}`;
-      statusText.classList.remove('text-emerald-300');
-      statusText.classList.add('text-amber-300');
+      setStatus("pending", `Status: ${upper}`);
     }
   } catch (e) {
-    console.error('checkPayment error:', e);
+    console.error("pay-status error:", e);
+    // boleh diabaikan, nanti cek lagi di interval berikutnya
   }
 }
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(checkPayment, 1000);
+  // cek tiap 3 detik biar nggak terlalu spam
+  pollTimer = setInterval(checkPaymentStatus, 3000);
 }
 
-// --- DAFTARKAN EVENT LISTENER (dengan pengecekan supaya nggak crash) ---
-if (createQRBtn) {
-  createQRBtn.addEventListener('click', createQR);
+// ---------------- Pasang event ----------------
+
+if (btnGenerate) {
+  btnGenerate.addEventListener("click", handleCreateQR);
 } else {
-  console.error('Button #createQRBtn tidak ditemukan di DOM');
+  console.error("#btn-generate tidak ditemukan");
 }
 
 if (amountInput) {
-  amountInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') createQR();
+  amountInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      handleCreateQR();
+    }
   });
-} else {
-  console.error('Input #amount tidak ditemukan di DOM');
 }
+
+// awal: tampilkan placeholder & status idle
+showPlaceholder();
