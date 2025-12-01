@@ -1,117 +1,147 @@
-// api/create-qris.js
+// js/script.js
 
-// Konfigurasi dari ENV (Vercel -> Project Settings -> Environment Variables)
-const config = {
-  storeName: process.env.STORE_NAME || 'NEVERMORE',
-  auth_username: process.env.ORKUT_AUTH_USERNAME,
-  auth_token: process.env.ORKUT_AUTH_TOKEN,
-  baseQrString: (process.env.BASE_QR_STRING || '').trim(),
-  logoPath: null
-};
+const amountInput = document.getElementById('amount');
+const createQRBtn = document.getElementById('createQRBtn');
+const errorText = document.getElementById('errorText');
 
-// bikin reference ID pendek
-function generateRef(prefix = 'REF') {
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
-  return (prefix + ts + rand).slice(0, 16);
+const resultBox = document.getElementById('resultBox');
+const refText = document.getElementById('refText');
+const statusText = document.getElementById('statusText');
+const qrcodeContainer = document.getElementById('qrcode');
+
+let currentRef = null;
+let currentAmount = null;
+let pollTimer = null;
+let qrInstance = null;
+
+function setError(msg) {
+  if (!msg) {
+    errorText.classList.add('hidden');
+    errorText.textContent = '';
+    return;
+  }
+  errorText.textContent = msg;
+  errorText.classList.remove('hidden');
 }
 
-// handler utama
-module.exports = async (req, res) => {
-  // boleh GET buat test manual di browser, tapi POST buat real use
-  if (req.method !== 'POST' && req.method !== 'GET') {
-    res.setHeader('Allow', 'POST, GET');
-    return res.status(405).json({
-      success: false,
-      message: 'Method not allowed'
-    });
+function renderQR(qrString) {
+  // bersihin container QR dulu
+  qrcodeContainer.innerHTML = '';
+
+  qrInstance = new QRCode(qrcodeContainer, {
+    text: qrString,
+    width: 256,
+    height: 256,
+    correctLevel: QRCode.CorrectLevel.M
+  });
+}
+
+async function createQR() {
+  setError('');
+  const amount = Number(amountInput.value);
+
+  if (!amount || amount <= 0) {
+    setError('Nominal belum diisi atau tidak valid.');
+    return;
   }
 
-  // --- ambil amount ---
-  let nominal = 0;
-
   try {
-    if (req.method === 'POST') {
-      const body =
-        typeof req.body === 'string'
-          ? JSON.parse(req.body || '{}')
-          : (req.body || {});
-      nominal = Number(body.amount);
-    } else {
-      // GET: /api/create-qris?amount=1000 buat ngetes di browser
-      nominal = Number(req.query.amount || 1000);
+    createQRBtn.disabled = true;
+    createQRBtn.textContent = 'Membuat QR...';
+
+    const res = await fetch('/api/create-qris', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ amount })
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data || !data.success) {
+      const msg = (data && data.message) || 'Gagal membuat QR';
+      throw new Error(msg);
     }
+
+    const { reference, amount: amt, qrString } = data.data;
+
+    currentRef = reference;
+    currentAmount = amt;
+
+    refText.textContent = reference;
+    statusText.textContent = 'Silakan scan QR dan lakukan pembayaran...';
+    statusText.classList.remove('text-emerald-300', 'text-red-300');
+    statusText.classList.add('text-amber-300');
+
+    renderQR(qrString);
+    resultBox.classList.remove('hidden');
+
+    startPolling();
   } catch (e) {
-    return res.status(400).json({
-      success: false,
-      stage: 'parse-body',
-      message: 'Body tidak valid / bukan JSON'
-    });
+    console.error(e);
+    setError(e.message || 'Terjadi kesalahan saat membuat QR.');
+  } finally {
+    createQRBtn.disabled = false;
+    createQRBtn.textContent = 'Buat QR';
   }
+}
 
-  if (!Number.isFinite(nominal) || nominal <= 0) {
-    return res.status(400).json({
-      success: false,
-      stage: 'validate-amount',
-      message: 'Amount tidak valid'
-    });
-  }
+async function checkPayment() {
+  if (!currentRef || !currentAmount) return;
 
-  if (!config.baseQrString) {
-    return res.status(500).json({
-      success: false,
-      stage: 'config',
-      message: 'BASE_QR_STRING belum di-set di environment'
-    });
-  }
-
-  // --- require autoft-qris DI DALAM handler, biar kalau error kebaca sebagai JSON ---
-  let QRISGenerator;
   try {
-    const mod = require('autoft-qris');          // pakai CommonJS
-    QRISGenerator = mod.QRISGenerator || mod.default;
+    // endpoint cek status di server kamu: /api/pay-status
+    const url = `/api/pay-status?reference=${encodeURIComponent(
+      currentRef
+    )}&amount=${currentAmount}`;
 
-    if (!QRISGenerator) {
-      throw new Error('QRISGenerator tidak ditemukan di autoft-qris');
+    const res = await fetch(url);
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data || !data.success) {
+      console.warn(
+        'Gagal cek pembayaran:',
+        (data && data.message) || res.statusText
+      );
+      return;
     }
-  } catch (e) {
-    console.error('Gagal require autoft-qris:', e);
-    return res.status(500).json({
-      success: false,
-      stage: 'require-autoft-qris',
-      message: e.message,
-      stack: e.stack
-    });
-  }
 
-  // --- generate QR ---
-  try {
-    // kita selalu pakai “theme1” saja, simple
-    const qrisGen = new QRISGenerator(config, 'theme1');
+    const status = data.data.status; // 'PAID', 'UNPAID', dll
 
-    const qrString = qrisGen.generateQrString(nominal);
-    const qrBuffer = await qrisGen.generateQRWithLogo(qrString);
+    if (status === 'PAID') {
+      statusText.textContent = '✅ Pembayaran berhasil (PAID)';
+      statusText.classList.remove('text-amber-300', 'text-red-300');
+      statusText.classList.add('text-emerald-300');
 
-    const reference = generateRef();
-    const qrBase64 = qrBuffer.toString('base64');
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        reference,
-        amount: nominal,
-        qrString,
-        // kalau mau dipakai di <img>, tinggal set src ke sini
-        qrImage: `data:image/png;base64,${qrBase64}`
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
       }
-    });
-  } catch (err) {
-    console.error('create-qris runtime error:', err);
-    return res.status(500).json({
-      success: false,
-      stage: 'generate',
-      message: err.message || 'Internal server error',
-      stack: err.stack
-    });
+    } else if (status === 'UNPAID') {
+      statusText.textContent = 'Menunggu pembayaran...';
+      statusText.classList.remove('text-emerald-300', 'text-red-300');
+      statusText.classList.add('text-amber-300');
+    } else {
+      statusText.textContent = `Status: ${status}`;
+      statusText.classList.remove('text-emerald-300');
+      statusText.classList.add('text-amber-300');
+    }
+  } catch (e) {
+    console.error('poll error', e);
   }
-};
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  // cek tiap 1 detik
+  pollTimer = setInterval(checkPayment, 1000);
+}
+
+createQRBtn.addEventListener('click', createQR);
+
+amountInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    createQR();
+  }
+});
