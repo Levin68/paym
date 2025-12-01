@@ -31,7 +31,7 @@ function renderQR(qrString) {
     text: qrString,
     width: 256,
     height: 256,
-    correctLevel: QRCode.CorrectLevel.M
+    correctLevel: QRCode.CorrectLevel.M,
   });
 }
 
@@ -50,14 +50,16 @@ async function createQR() {
 
     const res = await fetch('/api/create-qris', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount })
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ amount }),
     });
 
     const data = await res.json();
 
     if (!res.ok || !data.success) {
-      throw new Error(data.message || 'Gagal membuat QR');
+      throw new Error(data.message || 'Gagal membuat QR.');
     }
 
     const { reference, amount: amt, qrString } = data.data;
@@ -70,7 +72,10 @@ async function createQR() {
     statusText.classList.remove('text-emerald-300', 'text-red-300');
     statusText.classList.add('text-amber-300');
 
+    // kalau mau pakai data.data.qrImage instead:
+    // qrcodeContainer.innerHTML = `<img src="${data.data.qrImage}" class="w-64 h-64" />`
     renderQR(qrString);
+
     resultBox.classList.remove('hidden');
 
     startPolling();
@@ -87,6 +92,8 @@ async function checkPayment() {
   if (!currentRef || !currentAmount) return;
 
   try {
+    // Ganti ke endpoint yang kamu pakai di server:
+    // api/pay-status.js harus baca query ref & amount
     const url = `/api/pay-status?reference=${encodeURIComponent(
       currentRef
     )}&amount=${currentAmount}`;
@@ -99,7 +106,7 @@ async function checkPayment() {
       return;
     }
 
-    const status = data.data.status;
+    const status = (data.data && data.data.status) || 'UNPAID';
 
     if (status === 'PAID') {
       statusText.textContent = '✅ Pembayaran berhasil (PAID)';
@@ -110,9 +117,13 @@ async function checkPayment() {
         clearInterval(pollTimer);
         pollTimer = null;
       }
-    } else {
+    } else if (status === 'UNPAID') {
       statusText.textContent = 'Menunggu pembayaran...';
       statusText.classList.remove('text-emerald-300', 'text-red-300');
+      statusText.classList.add('text-amber-300');
+    } else {
+      statusText.textContent = `Status: ${status}`;
+      statusText.classList.remove('text-emerald-300');
       statusText.classList.add('text-amber-300');
     }
   } catch (e) {
@@ -122,7 +133,7 @@ async function checkPayment() {
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(checkPayment, 1000);
+  pollTimer = setInterval(checkPayment, 1000); // cek setiap 1 detik
 }
 
 createQRBtn.addEventListener('click', createQR);
