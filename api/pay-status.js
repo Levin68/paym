@@ -1,5 +1,24 @@
 // api/pay-status.js
 
+const fs = require('fs');
+const path = require('path');
+
+// sama kayak versi bot: helper buat normalisasi module
+const _norm = (m) => (m && (m.default || m)) || m;
+
+// cari folder package autoft-qris, lalu ambil /src
+const autoftEntry = require.resolve('autoft-qris');
+let pkgDir = path.dirname(autoftEntry);
+while (pkgDir && path.basename(pkgDir) !== 'autoft-qris') {
+  pkgDir = path.dirname(pkgDir);
+}
+const srcDir = fs.existsSync(path.join(pkgDir, 'src'))
+  ? path.join(pkgDir, 'src')
+  : pkgDir;
+
+// ambil PaymentChecker dari file internal, persis kayak di bot
+const PaymentChecker = _norm(require(path.join(srcDir, 'payment-checker.cjs')));
+
 // Konfigurasi dari ENV
 const config = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
@@ -8,16 +27,20 @@ const config = {
 
 // bantu normalisasi response dari PaymentChecker
 function normalizeResult(res) {
-  if (!res || typeof res !== 'object') return { status: 'UNKNOWN', raw: res };
+  if (!res || typeof res !== 'object') {
+    return { status: 'UNKNOWN', raw: res };
+  }
 
   let data = res.data || res.result || res;
   if (Array.isArray(data)) data = data[0] || {};
 
-  const status =
+  const statusRaw =
     (data.status ||
       data.payment_status ||
       data.transaction_status ||
-      '').toString().toUpperCase() || 'UNKNOWN';
+      '').toString();
+
+  const status = statusRaw ? statusRaw.toUpperCase() : 'UNKNOWN';
 
   return {
     status,
@@ -26,7 +49,7 @@ function normalizeResult(res) {
 }
 
 module.exports = async (req, res) => {
-  // script.js pakai GET, tapi kalau mau POST juga bisa
+  // script.js pakai GET, tapi kalau mau POST juga boleh
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({
@@ -84,26 +107,7 @@ module.exports = async (req, res) => {
     });
   }
 
-  // --- require autoft-qris di dalam handler ---
-  let PaymentChecker;
-  try {
-    const mod = require('autoft-qris');
-    PaymentChecker = mod.PaymentChecker;
-
-    if (!PaymentChecker) {
-      throw new Error('PaymentChecker tidak ditemukan di autoft-qris');
-    }
-  } catch (e) {
-    console.error('Gagal require autoft-qris (PaymentChecker):', e);
-    return res.status(500).json({
-      success: false,
-      stage: 'require-autoft-qris',
-      message: e.message,
-      stack: e.stack
-    });
-  }
-
-  // --- panggil API cek payment ---
+  // --- panggil PaymentChecker: sama persis konsepnya dengan versi bot ---
   try {
     const checker = new PaymentChecker({
       auth_token: config.auth_token,
@@ -113,15 +117,14 @@ module.exports = async (req, res) => {
     const rawResult = await checker.checkPaymentStatus(reference, amount);
     const norm = normalizeResult(rawResult);
 
-    // norm.status bisa: PAID, UNPAID, dll tergantung API OrderKuota
     return res.status(200).json({
       success: true,
       data: {
         reference,
         amount,
-        status: norm.status
+        status: norm.status // ini yg dibaca script.js -> PAID / UNPAID / dsb
       },
-      raw: norm.raw // kalau mau debug di network tab
+      raw: norm.raw // buat debug di Network tab kalau perlu
     });
   } catch (err) {
     console.error('pay-status runtime error:', err);
