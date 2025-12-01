@@ -1,5 +1,3 @@
-// api/create-qris.js
-
 const config = {
   storeName: process.env.STORE_NAME || 'NEVERMORE',
   auth_username: process.env.ORKUT_AUTH_USERNAME,
@@ -14,7 +12,6 @@ function generateRef(prefix = 'REF') {
   return `${prefix}${ts}${rand}`.slice(0, 16);
 }
 
-// cache supaya nggak import berkali-kali
 let QRClass = null;
 
 async function getGenerator() {
