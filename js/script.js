@@ -1,5 +1,3 @@
-// js/script.js
-
 const amountInput = document.getElementById('amount');
 const createQRBtn = document.getElementById('createQRBtn');
 const errorText = document.getElementById('errorText');
@@ -12,7 +10,6 @@ const qrcodeContainer = document.getElementById('qrcode');
 let currentRef = null;
 let currentAmount = null;
 let pollTimer = null;
-let qrInstance = null;
 
 function setError(msg) {
   if (!msg) {
@@ -24,20 +21,35 @@ function setError(msg) {
   errorText.classList.remove('hidden');
 }
 
-function renderQR(qrString) {
-  // bersihin dulu
+function renderQR({ qrImage, qrString }) {
   qrcodeContainer.innerHTML = '';
 
-  qrInstance = new QRCode(qrcodeContainer, {
-    text: qrString,
-    width: 256,
-    height: 256,
-    correctLevel: QRCode.CorrectLevel.M
-  });
+  if (qrImage && qrImage.startsWith('data:image')) {
+    const img = document.createElement('img');
+    img.src = qrImage;
+    img.alt = 'QRIS';
+    img.style.width = '256px';
+    img.style.height = '256px';
+    img.style.objectFit = 'contain';
+    qrcodeContainer.appendChild(img);
+    return;
+  }
+
+  if (qrString && typeof QRCode !== 'undefined') {
+    new QRCode(qrcodeContainer, {
+      text: qrString,
+      width: 256,
+      height: 256,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } else {
+    qrcodeContainer.textContent = 'QR tidak bisa ditampilkan.';
+  }
 }
 
 async function createQR() {
   setError('');
+
   const amount = Number(amountInput.value);
 
   if (!amount || amount <= 0) {
@@ -51,9 +63,7 @@ async function createQR() {
 
     const res = await fetch('/api/create-qris', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount })
     });
 
@@ -63,17 +73,17 @@ async function createQR() {
       throw new Error(data.message || 'Gagal membuat QR');
     }
 
-    const { reference, amount: amt, qrString } = data.data;
+    const { ref, amount: amt, qrString, qrImage } = data.data;
 
-    currentRef = reference;
+    currentRef = ref;
     currentAmount = amt;
 
-    refText.textContent = reference;
+    refText.textContent = ref || '-';
     statusText.textContent = 'Silakan scan QR dan lakukan pembayaran...';
     statusText.classList.remove('text-emerald-300', 'text-red-300');
     statusText.classList.add('text-amber-300');
 
-    renderQR(qrString);
+    renderQR({ qrImage, qrString });
     resultBox.classList.remove('hidden');
 
     startPolling();
@@ -90,9 +100,7 @@ async function checkPayment() {
   if (!currentRef || !currentAmount) return;
 
   try {
-    const url = `/api/pay-status?reference=${encodeURIComponent(
-      currentRef
-    )}&amount=${currentAmount}`;
+    const url = `/api/pay-status?reference=${encodeURIComponent(currentRef)}&amount=${currentAmount}`;
 
     const res = await fetch(url);
     const data = await res.json();
@@ -102,7 +110,7 @@ async function checkPayment() {
       return;
     }
 
-    const status = data.data.status; // 'PAID', 'UNPAID', etc
+    const status = data.data.status; 
 
     if (status === 'PAID') {
       statusText.textContent = '✅ Pembayaran berhasil (PAID)';
@@ -129,7 +137,6 @@ async function checkPayment() {
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  // tiap 1 detik
   pollTimer = setInterval(checkPayment, 1000);
 }
 
