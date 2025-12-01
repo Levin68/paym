@@ -64,9 +64,7 @@ async function createQR() {
 
     const res = await fetch('/api/create-qris', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount }),
     });
 
@@ -82,16 +80,16 @@ async function createQR() {
     console.log('[createQR] response =', data);
 
     if (!res.ok || !data || data.success !== true) {
-      setError(data && data.message ? data.message : 'Gagal membuat QR.');
+      setError((data && data.message) || 'Gagal membuat QR.');
       return;
     }
 
-    const { ref, amount: amt, qrImage, qrString } = data.data || {};
+    const { reference, amount: amt, qrImage, qrString } = data.data || {};
 
-    currentRef = ref;
+    currentRef = reference;
     currentAmount = amt;
 
-    refText.textContent = ref || '-';
+    refText.textContent = reference || '-';
     statusText.textContent = 'Silakan scan QR dan lakukan pembayaran...';
     statusText.classList.remove('text-emerald-300', 'text-red-300');
     statusText.classList.add('text-amber-300');
@@ -114,7 +112,7 @@ async function checkPayment() {
 
   try {
     const url =
-      `/api/pay-status?ref=${encodeURIComponent(currentRef)}` +
+      `/api/pay-status?reference=${encodeURIComponent(currentRef)}` +
       `&amount=${encodeURIComponent(currentAmount)}`;
 
     const res = await fetch(url);
@@ -167,7 +165,6 @@ function startPolling() {
   console.log('[poll] start');
 }
 
-// pastikan fungsi global bisa dipanggil dari HTML
 window.createQR = createQR;
 
 createQRBtn.addEventListener('click', createQR);
