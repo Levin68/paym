@@ -2,49 +2,71 @@
 
 const _norm = (m) => (m && (m.default || m)) || m;
 
-// ==== 1. Coba load PaymentChecker dari beberapa path berbeda ====
-let PaymentChecker = null;
-let loadError = null;
+// =========================
+// 1. Loader PaymentChecker (ESM)
+// =========================
 
-function tryLoadPaymentChecker() {
-  if (PaymentChecker) return PaymentChecker;
+let paymentCheckerPromise = null;
+let lastLoadError = null;
 
-  try {
-    // 1) struktur paling umum: autoft-qris/src/payment-checker.cjs
-    PaymentChecker = _norm(require('autoft-qris/src/payment-checker.cjs'));
-    return PaymentChecker;
-  } catch (e1) {
-    loadError = e1;
-  }
+async function getPaymentChecker() {
+  if (paymentCheckerPromise) return paymentCheckerPromise;
 
-  try {
-    // 2) kalau src nggak ada, coba langsung di root
-    PaymentChecker = _norm(require('autoft-qris/payment-checker.cjs'));
-    return PaymentChecker;
-  } catch (e2) {
-    loadError = e2;
-  }
+  paymentCheckerPromise = (async () => {
+    try {
+      // 1) coba path ESM spesifik dulu
+      try {
+        const m1 = await import('autoft-qris/src/payment-checker.mjs');
+        const C1 = _norm(m1.PaymentChecker || m1.default || m1);
+        if (C1) return C1;
+      } catch (e1) {
+        lastLoadError = e1;
+      }
 
-  try {
-    // 3) fallback terakhir: root export (kalau dia pernah export PaymentChecker)
-    const mod = require('autoft-qris');
-    PaymentChecker = _norm(mod.PaymentChecker || mod.paymentChecker || null);
-    if (PaymentChecker) return PaymentChecker;
-  } catch (e3) {
-    loadError = e3;
-  }
+      // 2) coba kalau ada di root paket
+      try {
+        const m2 = await import('autoft-qris/payment-checker.mjs');
+        const C2 = _norm(m2.PaymentChecker || m2.default || m2);
+        if (C2) return C2;
+      } catch (e2) {
+        lastLoadError = e2;
+      }
 
-  // kalau sampai sini masih gagal, biarin PaymentChecker = null
-  return null;
+      // 3) fallback: export dari index autoft-qris
+      try {
+        const m3 = await import('autoft-qris');
+        const C3 = _norm(
+          m3.PaymentChecker ||
+          m3.paymentChecker ||
+          (m3.default && (m3.default.PaymentChecker || m3.default.paymentChecker))
+        );
+        if (C3) return C3;
+      } catch (e3) {
+        lastLoadError = e3;
+      }
+
+      throw lastLoadError || new Error('PaymentChecker tidak ditemukan');
+    } catch (e) {
+      lastLoadError = e;
+      throw e;
+    }
+  })();
+
+  return paymentCheckerPromise;
 }
 
-// ==== 2. Config dari ENV ====
+// =========================
+// 2. Config ENV
+// =========================
+
 const config = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
   auth_token: process.env.ORKUT_AUTH_TOKEN
 };
 
-// ==== 3. Normalisasi hasil PaymentChecker -> status singkat ====
+// =========================
+/** Normalisasi hasil PaymentChecker -> {status, raw} */
+// =========================
 function normalizeResult(res) {
   if (!res || typeof res !== 'object') {
     return { status: 'UNKNOWN', raw: res };
@@ -67,7 +89,10 @@ function normalizeResult(res) {
   };
 }
 
-// ==== 4. Handler Vercel Function ====
+// =========================
+// 3. Handler Vercel
+// =========================
+
 module.exports = async (req, res) => {
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
@@ -77,14 +102,16 @@ module.exports = async (req, res) => {
     });
   }
 
-  // pastikan PaymentChecker sudah berhasil diloader
-  const PC = tryLoadPaymentChecker();
-  if (!PC) {
+  // --- load PaymentChecker via dynamic import ---
+  let PC;
+  try {
+    PC = await getPaymentChecker();
+  } catch (e) {
     return res.status(500).json({
       success: false,
       stage: 'load-payment-checker',
       message: 'PaymentChecker tidak bisa diload dari autoft-qris',
-      detail: loadError ? String(loadError.message || loadError) : null
+      detail: String(e && e.message ? e.message : e)
     });
   }
 
@@ -137,7 +164,7 @@ module.exports = async (req, res) => {
     });
   }
 
-  // --- panggil PaymentChecker ke API OrderKuota ---
+  // --- panggil PaymentChecker ke API AutoFT / OrderKuota ---
   try {
     const checker = new PC({
       auth_token: config.auth_token,
