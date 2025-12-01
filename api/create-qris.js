@@ -3,20 +3,22 @@
 const { QRISGenerator } = require('autoft-qris');
 
 const config = {
-  storeName: process.env.STORE_NAME || 'NEVERMORE',
-  auth_username: process.env.ORKUT_AUTH_USERNAME,
-  auth_token: process.env.ORKUT_AUTH_TOKEN,
+  // WAJIB: di-set di Vercel → Settings → Environment Variables
   baseQrString: (process.env.BASE_QR_STRING || '').trim(),
   logoPath: null,
 };
 
 function generateRef(prefix = 'REF') {
   const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
+  const rand = Math.floor(Math.random() * 1e6)
+    .toString(36)
+    .toUpperCase();
+  // max 16 char biar pendek
   return (prefix + ts + rand).slice(0, 16);
 }
 
 module.exports = async (req, res) => {
+  // HANYA TERIMA POST
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res
@@ -25,13 +27,12 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const body =
-      typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    // body bisa string / object tergantung Vercel
+    const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+    const body = rawBody ? JSON.parse(rawBody) : {};
+    const amount = Number(body.amount);
 
-    const { amount } = body;
-    const nominal = Number(amount);
-
-    if (!Number.isFinite(nominal) || nominal <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       return res
         .status(400)
         .json({ success: false, message: 'Amount tidak valid' });
@@ -40,22 +41,28 @@ module.exports = async (req, res) => {
     if (!config.baseQrString) {
       return res.status(500).json({
         success: false,
-        message: 'BASE_QR_STRING belum di-set di ENV / Vercel',
+        message: 'BASE_QR_STRING belum di-set di Environment Vercel',
       });
     }
 
-    // pakai autoft-qris langsung dari entry utama, ga usah import path src
+    // bikin generator
     const qrisGen = new QRISGenerator(config, 'theme1');
-    const qrString = qrisGen.generateQrString(nominal);
+
+    // QR string + buffer PNG
+    const qrString = qrisGen.generateQrString(amount);
+    const qrBuffer = await qrisGen.generateQRWithLogo(qrString);
 
     const reference = generateRef();
+    const qrBase64 = qrBuffer.toString('base64');
 
     return res.status(200).json({
       success: true,
       data: {
-        reference,        // dipakai di front-end
-        amount: nominal,
-        qrString,         // string QRIS mentah, nanti di-render oleh qrcodejs di browser
+        reference,
+        amount,
+        qrString,
+        // kalau mau dipakai nanti tinggal pakai <img src="...">
+        qrImage: `data:image/png;base64,${qrBase64}`,
       },
     });
   } catch (err) {
