@@ -1,31 +1,22 @@
 // api/pay-status.js
 
-const fs = require('fs');
-const path = require('path');
-
-// sama kayak versi bot: helper buat normalisasi module
-const _norm = (m) => (m && (m.default || m)) || m;
-
-// cari folder package autoft-qris, lalu ambil /src
-const autoftEntry = require.resolve('autoft-qris');
-let pkgDir = path.dirname(autoftEntry);
-while (pkgDir && path.basename(pkgDir) !== 'autoft-qris') {
-  pkgDir = path.dirname(pkgDir);
+// Ambil PaymentChecker langsung dari package, sesuai README autoft-qris:
+// const { PaymentChecker } = require('autoft-qris');
+let PaymentChecker;
+try {
+  const mod = require('autoft-qris');
+  PaymentChecker = mod.PaymentChecker;
+} catch (e) {
+  console.error('Gagal require autoft-qris:', e);
 }
-const srcDir = fs.existsSync(path.join(pkgDir, 'src'))
-  ? path.join(pkgDir, 'src')
-  : pkgDir;
 
-// ambil PaymentChecker dari file internal, persis kayak di bot
-const PaymentChecker = _norm(require(path.join(srcDir, 'payment-checker.cjs')));
-
-// Konfigurasi dari ENV
+// Konfigurasi dari ENV (HARUS di-set di Vercel)
 const config = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
   auth_token: process.env.ORKUT_AUTH_TOKEN
 };
 
-// bantu normalisasi response dari PaymentChecker
+// Normalisasi hasil PaymentChecker -> status yang rapi
 function normalizeResult(res) {
   if (!res || typeof res !== 'object') {
     return { status: 'UNKNOWN', raw: res };
@@ -49,7 +40,7 @@ function normalizeResult(res) {
 }
 
 module.exports = async (req, res) => {
-  // script.js pakai GET, tapi kalau mau POST juga boleh
+  // script.js pakai GET, tapi boleh juga POST
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({
@@ -58,7 +49,16 @@ module.exports = async (req, res) => {
     });
   }
 
-  // --- ambil reference & amount ---
+  // Pastikan PaymentChecker kebaca
+  if (!PaymentChecker) {
+    return res.status(500).json({
+      success: false,
+      stage: 'require-autoft-qris',
+      message: 'PaymentChecker tidak ditemukan di autoft-qris'
+    });
+  }
+
+  // --- Ambil reference & amount ---
   let reference = '';
   let amount = 0;
 
@@ -107,7 +107,7 @@ module.exports = async (req, res) => {
     });
   }
 
-  // --- panggil PaymentChecker: sama persis konsepnya dengan versi bot ---
+  // --- Panggil PaymentChecker ke API OrderKuota ---
   try {
     const checker = new PaymentChecker({
       auth_token: config.auth_token,
@@ -122,9 +122,9 @@ module.exports = async (req, res) => {
       data: {
         reference,
         amount,
-        status: norm.status // ini yg dibaca script.js -> PAID / UNPAID / dsb
+        status: norm.status  // ini yang dibaca script.js (PAID / UNPAID / dst)
       },
-      raw: norm.raw // buat debug di Network tab kalau perlu
+      raw: norm.raw // buat debug di Network tab
     });
   } catch (err) {
     console.error('pay-status runtime error:', err);
