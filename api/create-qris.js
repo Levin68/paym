@@ -1,3 +1,5 @@
+// api/create-qris.js
+
 const config = {
   storeName: process.env.STORE_NAME || 'NEVERMORE',
   auth_username: process.env.ORKUT_AUTH_USERNAME,
@@ -13,43 +15,50 @@ function generateRef(prefix = 'REF') {
 }
 
 // cache supaya nggak import berkali-kali
-let QRTheme1Class = null;
+let QRClass = null;
 
 async function getGenerator() {
-  if (!QRTheme1Class) {
-    const m1 = await import('autoft-qris/src/qr-generator.mjs');
-    QRTheme1Class = m1.default || m1.QRISGeneratorTheme1 || m1.QRISGenerator || m1.QRISGeneratorDefault;
+  if (!QRClass) {
+    const m = await import('autoft-qris/src/qr-generator.mjs');
+    QRClass = m.default || m.QRISGenerator || m.QRISGeneratorTheme1 || m.QRISGeneratorDefault;
   }
-
-  const Cls = QRTheme1Class;
   const localConf = { ...config };
-  return new Cls(localConf, 'theme1');
+  return new QRClass(localConf, 'theme1');
 }
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
-    return res.status(405).json({ success: false, message: 'Method not allowed' });
+    return res.status(405).json({
+      success: false,
+      message: 'Method not allowed. Use POST.'
+    });
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body;
-    const { amount } = body;
-    const nominal = Number(amount);
+    const body =
+      typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const nominal = Number(body.amount);
 
     if (!Number.isFinite(nominal) || nominal <= 0) {
-      return res.status(400).json({ success: false, message: 'Amount tidak valid' });
+      return res.status(400).json({
+        success: false,
+        message: 'Amount tidak valid'
+      });
     }
 
     if (!config.baseQrString) {
-      return res.status(500).json({ success: false, message: 'BASE_QR_STRING belum di-set' });
+      return res.status(500).json({
+        success: false,
+        message: 'BASE_QR_STRING belum di-set'
+      });
     }
 
     let qrisGen;
     try {
       qrisGen = await getGenerator();
     } catch (e) {
-      console.error('ERROR import qr-generator modules:', e);
+      console.error('ERROR import qr-generator:', e);
       return res.status(500).json({
         success: false,
         stage: 'import-qr-generator',
