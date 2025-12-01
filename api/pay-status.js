@@ -1,81 +1,100 @@
-// api/create-qris.js
+// api/pay-status.js
 
-// Konfigurasi dari ENV (Vercel -> Project Settings -> Environment Variables)
+// Konfigurasi dari ENV
 const config = {
-  storeName: process.env.STORE_NAME || 'NEVERMORE',
   auth_username: process.env.ORKUT_AUTH_USERNAME,
-  auth_token: process.env.ORKUT_AUTH_TOKEN,
-  baseQrString: (process.env.BASE_QR_STRING || '').trim(),
-  logoPath: null
+  auth_token: process.env.ORKUT_AUTH_TOKEN
 };
 
-// bikin reference ID pendek
-function generateRef(prefix = 'REF') {
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
-  return (prefix + ts + rand).slice(0, 16);
+// bantu normalisasi response dari PaymentChecker
+function normalizeResult(res) {
+  if (!res || typeof res !== 'object') return { status: 'UNKNOWN', raw: res };
+
+  let data = res.data || res.result || res;
+  if (Array.isArray(data)) data = data[0] || {};
+
+  const status =
+    (data.status ||
+      data.payment_status ||
+      data.transaction_status ||
+      '').toString().toUpperCase() || 'UNKNOWN';
+
+  return {
+    status,
+    raw: res
+  };
 }
 
-// handler utama
 module.exports = async (req, res) => {
-  // boleh GET buat test manual di browser, tapi POST buat real use
-  if (req.method !== 'POST' && req.method !== 'GET') {
-    res.setHeader('Allow', 'POST, GET');
+  // script.js pakai GET, tapi kalau mau POST juga bisa
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({
       success: false,
       message: 'Method not allowed'
     });
   }
 
-  // --- ambil amount ---
-  let nominal = 0;
+  // --- ambil reference & amount ---
+  let reference = '';
+  let amount = 0;
 
   try {
-    if (req.method === 'POST') {
+    if (req.method === 'GET') {
+      reference = (req.query.reference || '').toString().trim();
+      amount = Number(req.query.amount || 0);
+    } else {
       const body =
         typeof req.body === 'string'
           ? JSON.parse(req.body || '{}')
           : (req.body || {});
-      nominal = Number(body.amount);
-    } else {
-      // GET: /api/create-qris?amount=1000 buat ngetes di browser
-      nominal = Number(req.query.amount || 1000);
+      reference = (body.reference || '').toString().trim();
+      amount = Number(body.amount || 0);
     }
   } catch (e) {
     return res.status(400).json({
       success: false,
       stage: 'parse-body',
-      message: 'Body tidak valid / bukan JSON'
+      message: 'Body / query tidak valid'
     });
   }
 
-  if (!Number.isFinite(nominal) || nominal <= 0) {
+  if (!reference) {
     return res.status(400).json({
       success: false,
-      stage: 'validate-amount',
-      message: 'Amount tidak valid'
+      stage: 'validate',
+      message: 'reference wajib diisi'
     });
   }
 
-  if (!config.baseQrString) {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return res.status(400).json({
+      success: false,
+      stage: 'validate',
+      message: 'amount tidak valid'
+    });
+  }
+
+  if (!config.auth_username || !config.auth_token) {
     return res.status(500).json({
       success: false,
       stage: 'config',
-      message: 'BASE_QR_STRING belum di-set di environment'
+      message:
+        'ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum di-set di environment'
     });
   }
 
-  // --- require autoft-qris DI DALAM handler, biar kalau error kebaca sebagai JSON ---
-  let QRISGenerator;
+  // --- require autoft-qris di dalam handler ---
+  let PaymentChecker;
   try {
-    const mod = require('autoft-qris');          // pakai CommonJS
-    QRISGenerator = mod.QRISGenerator || mod.default;
+    const mod = require('autoft-qris');
+    PaymentChecker = mod.PaymentChecker;
 
-    if (!QRISGenerator) {
-      throw new Error('QRISGenerator tidak ditemukan di autoft-qris');
+    if (!PaymentChecker) {
+      throw new Error('PaymentChecker tidak ditemukan di autoft-qris');
     }
   } catch (e) {
-    console.error('Gagal require autoft-qris:', e);
+    console.error('Gagal require autoft-qris (PaymentChecker):', e);
     return res.status(500).json({
       success: false,
       stage: 'require-autoft-qris',
@@ -84,32 +103,31 @@ module.exports = async (req, res) => {
     });
   }
 
-  // --- generate QR ---
+  // --- panggil API cek payment ---
   try {
-    // kita selalu pakai “theme1” saja, simple
-    const qrisGen = new QRISGenerator(config, 'theme1');
+    const checker = new PaymentChecker({
+      auth_token: config.auth_token,
+      auth_username: config.auth_username
+    });
 
-    const qrString = qrisGen.generateQrString(nominal);
-    const qrBuffer = await qrisGen.generateQRWithLogo(qrString);
+    const rawResult = await checker.checkPaymentStatus(reference, amount);
+    const norm = normalizeResult(rawResult);
 
-    const reference = generateRef();
-    const qrBase64 = qrBuffer.toString('base64');
-
+    // norm.status bisa: PAID, UNPAID, dll tergantung API OrderKuota
     return res.status(200).json({
       success: true,
       data: {
         reference,
-        amount: nominal,
-        qrString,
-        // kalau mau dipakai di <img>, tinggal set src ke sini
-        qrImage: `data:image/png;base64,${qrBase64}`
-      }
+        amount,
+        status: norm.status
+      },
+      raw: norm.raw // kalau mau debug di network tab
     });
   } catch (err) {
-    console.error('create-qris runtime error:', err);
+    console.error('pay-status runtime error:', err);
     return res.status(500).json({
       success: false,
-      stage: 'generate',
+      stage: 'check-payment',
       message: err.message || 'Internal server error',
       stack: err.stack
     });
