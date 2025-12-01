@@ -1,208 +1,134 @@
-// api/pay-status.js
-const fs = require('fs');
-const path = require('path');
+// js/script.js
 
-const _norm = (m) => (m && (m.default || m)) || m;
+const amountInput = document.getElementById('amount');
+const createQRBtn = document.getElementById('createQRBtn');
+const errorText = document.getElementById('errorText');
 
-let PaymentCheckerClass = null;
+const resultBox = document.getElementById('resultBox');
+const refText = document.getElementById('refText');
+const statusText = document.getElementById('statusText');
+const qrcodeContainer = document.getElementById('qrcode');
 
-function resolvePaymentChecker() {
-  if (PaymentCheckerClass) return PaymentCheckerClass;
+let currentRef = null;
+let currentAmount = null;
+let pollTimer = null;
+let qrInstance = null;
 
-  // Cari folder paket autoft-qris di node_modules
-  const autoftEntry = require.resolve('autoft-qris');
-  let pkgDir = path.dirname(autoftEntry);
-  while (pkgDir && path.basename(pkgDir) !== 'autoft-qris') {
-    const parent = path.dirname(pkgDir);
-    if (parent === pkgDir) break;
-    pkgDir = parent;
-  }
-
-  const candidates = [
-    path.join(pkgDir, 'src', 'payment-checker.cjs'),
-    path.join(pkgDir, 'payment-checker.cjs'),
-    path.join(pkgDir, 'src', 'payment-checker.js'),
-    path.join(pkgDir, 'payment-checker.js')
-  ];
-
-  let chosen = null;
-  for (const file of candidates) {
-    if (fs.existsSync(file)) {
-      chosen = file;
-      break;
-    }
-  }
-
-  if (!chosen) {
-    throw new Error(
-      'autoft-qris PaymentChecker module tidak ditemukan (coba upgrade autoft-qris ke 0.0.9).'
-    );
-  }
-
-  PaymentCheckerClass = _norm(require(chosen));
-  return PaymentCheckerClass;
-}
-
-const PAID_STATUSES = new Set([
-  'PAID',
-  'SUCCESS',
-  'COMPLETED',
-  'SETTLEMENT',
-  'CAPTURE',
-  'CONFIRMED',
-  'SUCCESSFUL',
-  'PAID_OFF',
-  'DONE',
-  'BERHASIL',
-  'SUKSES'
-]);
-
-function upper(x) {
-  return typeof x === 'string' ? x.toUpperCase() : '';
-}
-
-function normalizePaymentResult(apiRes, fallbackRef, fallbackAmount) {
-  if (!apiRes || typeof apiRes !== 'object') {
-    return {
-      success: false,
-      status: 'UNKNOWN',
-      message: 'Response kosong / bukan object',
-      raw: apiRes
-    };
-  }
-
-  const root = apiRes;
-  let data =
-    root.data ||
-    root.result ||
-    root.transaction ||
-    root.payment ||
-    root;
-
-  if (Array.isArray(data)) data = data[0] || {};
-
-  const candidatesStatus = [
-    data && data.status,
-    data && data.payment_status,
-    data && data.transaction_status,
-    root && root.status_text,
-    root && root.status
-  ].map(upper);
-
-  let status = 'PENDING';
-
-  for (const s of candidatesStatus) {
-    if (!s) continue;
-    if (PAID_STATUSES.has(s) || /PAID|SUCCESS|BERHASIL|LUNAS/.test(s)) {
-      status = 'PAID';
-      break;
-    }
-    if (/FAILED|CANCEL|EXPIRED|GAGAL/.test(s)) {
-      status = 'FAILED';
-      break;
-    }
-    if (/PENDING|WAITING|MENUNGGU/.test(s)) {
-      status = 'PENDING';
-    }
-  }
-
-  const ref =
-    (data &&
-      (data.ref ||
-        data.reference ||
-        data.order_id ||
-        data.transaction_id)) ||
-    fallbackRef ||
-    null;
-
-  const amount =
-    Number(
-      (data &&
-        (data.amount ||
-          data.nominal ||
-          data.total ||
-          data.gross_amount)) ||
-      fallbackAmount ||
-      0
-    ) || 0;
-
-  const paidAt =
-    (data &&
-      (data.paid_at ||
-        data.paidAt ||
-        data.date ||
-        data.transaction_time ||
-        data.settled_at)) ||
-    null;
-
-  return {
-    success: true,
-    status,
-    rawStatus: candidatesStatus.find(Boolean) || null,
-    ref,
-    amount,
-    paidAt,
-    raw: apiRes
-  };
-}
-
-module.exports = async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.status(405).json({ success: false, message: 'Method not allowed' });
+function setError(msg) {
+  if (!msg) {
+    errorText.classList.add('hidden');
+    errorText.textContent = '';
     return;
   }
+  errorText.textContent = msg;
+  errorText.classList.remove('hidden');
+}
 
-  const { ref, amount } = req.query;
+function renderQR(qrString) {
+  qrcodeContainer.innerHTML = '';
 
-  if (!ref) {
-    res.status(400).json({ success: false, message: 'param "ref" wajib ada' });
-    return;
-  }
+  qrInstance = new QRCode(qrcodeContainer, {
+    text: qrString,
+    width: 256,
+    height: 256,
+    correctLevel: QRCode.CorrectLevel.M
+  });
+}
 
-  const auth_token = process.env.ORKUT_AUTH_TOKEN;
-  const auth_username = process.env.ORKUT_AUTH_USERNAME;
+async function createQR() {
+  setError('');
+  const amount = Number(amountInput.value);
 
-  if (!auth_token || !auth_username) {
-    res.status(500).json({
-      success: false,
-      stage: 'env',
-      message: 'ORKUT_AUTH_TOKEN / ORKUT_AUTH_USERNAME belum di-set'
-    });
-    return;
-  }
-
-  let PaymentChecker;
-  try {
-    PaymentChecker = resolvePaymentChecker();
-  } catch (err) {
-    console.error('[pay-status] gagal load PaymentChecker:', err);
-    res.status(500).json({
-      success: false,
-      stage: 'require-autoft-qris',
-      message: err.message
-    });
+  if (!amount || amount <= 0) {
+    setError('Nominal belum diisi atau tidak valid.');
     return;
   }
 
   try {
-    const checker = new PaymentChecker({
-      auth_token,
-      auth_username
+    createQRBtn.disabled = true;
+    createQRBtn.textContent = 'Membuat QR...';
+
+    const res = await fetch('/api/create-qris', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount })
     });
 
-    // amount bisa kosong, tapi kita kirim kalau ada
-    const amtNum = amount ? Number(amount) : undefined;
-    const apiRes = await checker.checkPaymentStatus(ref, amtNum);
+    const data = await res.json();
 
-    const normalized = normalizePaymentResult(apiRes, ref, amtNum);
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || 'Gagal membuat QR');
+    }
 
-    res.status(200).json(normalized);
-  } catch (err) {
-    console.error('[pay-status] error saat call checkPaymentStatus:', err);
-    res.status(500).json({
-      success: false,
-      stage: 'call-payment-checker',
-      message: err.message
-    });
+    const { reference, amount: amt, qrString } = data.data;
+
+    currentRef = reference;
+    currentAmount = amt;
+
+    refText.textContent = reference;
+    statusText.textContent = 'Silakan scan QR dan lakukan pembayaran...';
+    statusText.classList.remove('text-emerald-300', 'text-red-300');
+    statusText.classList.add('text-amber-300');
+
+    renderQR(qrString);
+    resultBox.classList.remove('hidden');
+
+    startPolling();
+  } catch (e) {
+    console.error(e);
+    setError(e.message || 'Terjadi kesalahan saat membuat QR.');
+  } finally {
+    createQRBtn.disabled = false;
+    createQRBtn.textContent = 'Buat QR';
   }
-};
+}
+
+async function checkPayment() {
+  if (!currentRef || !currentAmount) return;
+
+  try {
+    const url = `/api/pay-status?reference=${encodeURIComponent(
+      currentRef
+    )}&amount=${currentAmount}`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      console.warn('Gagal cek pembayaran:', data.message || res.statusText);
+      return;
+    }
+
+    const status = data.data.status;
+
+    if (status === 'PAID') {
+      statusText.textContent = '✅ Pembayaran berhasil (PAID)';
+      statusText.classList.remove('text-amber-300', 'text-red-300');
+      statusText.classList.add('text-emerald-300');
+
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    } else {
+      statusText.textContent = 'Menunggu pembayaran...';
+      statusText.classList.remove('text-emerald-300', 'text-red-300');
+      statusText.classList.add('text-amber-300');
+    }
+  } catch (e) {
+    console.error('poll error', e);
+  }
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(checkPayment, 1000);
+}
+
+createQRBtn.addEventListener('click', createQR);
+
+amountInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    createQR();
+  }
+});
