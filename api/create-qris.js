@@ -1,6 +1,9 @@
 // api/create-qris.js
+// Endpoint: POST /api/create-qris
+// Body: { "amount": 1000 }
 
-// --- KONFIGURASI DARI ENV ---
+const { QRISGenerator } = require('autoft-qris');
+
 const config = {
   storeName: process.env.STORE_NAME || 'NEVERMORE',
   auth_username: process.env.ORKUT_AUTH_USERNAME,
@@ -15,52 +18,20 @@ function generateRef(prefix = 'REF') {
   return `${prefix}${ts}${rand}`.slice(0, 16);
 }
 
-// cache supaya nggak require berkali-kali
-let QRISGeneratorClass = null;
-
-function getGenerator(theme = 'theme1') {
-  if (!QRISGeneratorClass) {
-    // 👉 PENTING: pakai entry utama package, BUKAN /src/...
-    const mod = require('autoft-qris');
-
-    // coba beberapa kemungkinan export
-    QRISGeneratorClass =
-      mod.QRISGenerator ||
-      mod.default ||
-      mod.QRISGeneratorTheme1 ||
-      mod.QRISGeneratorDefault ||
-      mod;
-  }
-
-  const localConf = { ...config };
-  return new QRISGeneratorClass(localConf, theme === 'theme2' ? 'theme2' : 'theme1');
-}
-
 module.exports = async (req, res) => {
-  // biar kalau dibuka di browser langsung (GET) nggak crash
-  if (req.method === 'GET') {
-    return res.status(405).json({
-      success: false,
-      message: 'Gunakan POST /api/create-qris',
-      method: 'GET'
-    });
-  }
-
+  // HARUS POST – kalau diakses GET dari browser, wajar dapat 405
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res
       .status(405)
-      .json({ success: false, message: 'Method tidak diizinkan' });
+      .json({ success: false, message: 'Method not allowed. Use POST.' });
   }
 
   try {
-    // body kadang sudah objek, kadang string (tergantung Vercel)
     const body =
-      typeof req.body === 'string'
-        ? JSON.parse(req.body || '{}')
-        : (req.body || {});
+      typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
 
-    const { amount, theme = 'theme1' } = body;
+    const { amount } = body;
     const nominal = Number(amount);
 
     if (!Number.isFinite(nominal) || nominal <= 0) {
@@ -75,30 +46,20 @@ module.exports = async (req, res) => {
         .json({ success: false, message: 'BASE_QR_STRING belum di-set' });
     }
 
-    let qrisGen;
-    try {
-      qrisGen = getGenerator(theme);
-    } catch (e) {
-      console.error('ERROR load autoft-qris:', e);
-      return res.status(500).json({
-        success: false,
-        stage: 'load-autoft-qris',
-        message: e.message
-      });
-    }
+    // Pakai 1 theme default saja (misal 'theme1'), nggak usah dioper dari front-end
+    const gen = new QRISGenerator(config, 'theme1');
 
-    const qrString = qrisGen.generateQrString(nominal);
-    const qrBuffer = await qrisGen.generateQRWithLogo(qrString);
+    const qrString = gen.generateQrString(nominal);
+    const qrBuffer = await gen.generateQRWithLogo(qrString);
 
-    const ref = generateRef();
+    const reference = generateRef();
     const qrBase64 = qrBuffer.toString('base64');
 
     return res.status(200).json({
       success: true,
       data: {
-        reference: ref,
+        reference,      // dipakai di script.js -> currentRef
         amount: nominal,
-        theme: theme === 'theme2' ? 'theme2' : 'theme1',
         qrString,
         qrImage: `data:image/png;base64,${qrBase64}`
       }
