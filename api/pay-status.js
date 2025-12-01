@@ -1,9 +1,7 @@
-// api/pay-status.js
-
 const _norm = (m) => (m && (m.default || m)) || m;
 
 // =========================
-// 1. Loader PaymentChecker (ESM)
+// 1. Loader PaymentChecker (ESM & CommonJS)
 // =========================
 
 let paymentCheckerPromise = null;
@@ -23,7 +21,7 @@ async function getPaymentChecker() {
         lastLoadError = e1;
       }
 
-      // 2) coba kalau ada di root paket
+      // 2) coba jika ada di root paket
       try {
         const m2 = await import('autoft-qris/payment-checker.mjs');
         const C2 = _norm(m2.PaymentChecker || m2.default || m2);
@@ -32,14 +30,9 @@ async function getPaymentChecker() {
         lastLoadError = e2;
       }
 
-      // 3) fallback: export dari index autoft-qris
+      // 3) fallback: Coba menggunakan require
       try {
-        const m3 = await import('autoft-qris');
-        const C3 = _norm(
-          m3.PaymentChecker ||
-          m3.paymentChecker ||
-          (m3.default && (m3.default.PaymentChecker || m3.default.paymentChecker))
-        );
+        const C3 = require('autoft-qris').PaymentChecker || require('autoft-qris/src/payment-checker.cjs');
         if (C3) return C3;
       } catch (e3) {
         lastLoadError = e3;
@@ -65,7 +58,7 @@ const config = {
 };
 
 // =========================
-/** Normalisasi hasil PaymentChecker -> {status, raw} */
+// 3. Normalisasi hasil PaymentChecker -> {status, raw}
 // =========================
 function normalizeResult(res) {
   if (!res || typeof res !== 'object') {
@@ -90,7 +83,7 @@ function normalizeResult(res) {
 }
 
 // =========================
-// 3. Handler Vercel
+// 4. Handler Vercel
 // =========================
 
 module.exports = async (req, res) => {
