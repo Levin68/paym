@@ -11,23 +11,21 @@ const config = {
 function generateReference(prefix = 'REF') {
   const ts = Date.now().toString(36).toUpperCase();
   const rand = Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
-  return `${prefix}${ts}${rand}`.slice(0, 16); // max 16 char
+  return `${prefix}${ts}${rand}`.slice(0, 16);
 }
 
-// cache class supaya nggak import berkali-kali
 let QRISGeneratorClass = null;
 
 async function getGenerator(themeName) {
   if (!QRISGeneratorClass) {
-    // IMPORT ENTRY RESMI PACKAGE
     const m = await import('autoft-qris');
     const base = m.default || m;
 
     QRISGeneratorClass =
-      base.QRISGenerator ||            // sesuai README
-      base.QRISGeneratorTheme1 ||      // jaga-jaga
-      base.QRISGeneratorDefault ||     // jaga-jaga
-      base;                            // last fallback
+      base.QRISGenerator ||
+      base.QRISGeneratorTheme1 ||
+      base.QRISGeneratorDefault ||
+      base;
   }
 
   const localConf = {
@@ -42,7 +40,6 @@ async function getGenerator(themeName) {
 }
 
 module.exports = async (req, res) => {
-  // JANGAN IMPORT APA2 DI ATAS SINI, cek method dulu
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
     return res
@@ -51,7 +48,6 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // parse body (string / object)
     const body =
       typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
 
@@ -85,9 +81,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    // pake API resmi dari lib
     const qrString = generator.generateQrString(nominal);
-
     const reference = generateReference();
 
     return res.status(200).json({
