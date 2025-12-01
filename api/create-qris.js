@@ -6,56 +6,65 @@ const config = {
   logoPath: null
 };
 
-function generateRef(prefix = 'REF') {
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
-  return `${prefix}${ts}${rand}`.slice(0, 16);
+// Ubah generateRef untuk memakai format custom
+function generateRef(prefix = 'LEVPAY') {
+  const rand = Math.floor(Math.random() * 100).toString().padStart(5, '0');  // Nomor acak 5 digit
+  return `${prefix}${rand}`;  // Format baru: LEVPAY00001
 }
 
-let QRClass = null;
+// cache supaya nggak import berkali-kali
+let QRTheme1Class = null;
+let QRTheme2Class = null;
 
-async function getGenerator() {
-  if (!QRClass) {
-    const m = await import('autoft-qris/src/qr-generator.mjs');
-    QRClass = m.default || m.QRISGenerator || m.QRISGeneratorTheme1 || m.QRISGeneratorDefault;
+async function getGenerator(theme) {
+  const useTheme2 = theme === 'theme2';
+
+  if (!QRTheme1Class) {
+    const m1 = await import('autoft-qris/src/qr-generator.mjs');
+    QRTheme1Class = m1.default || m1.QRISGeneratorTheme1 || m1.QRISGenerator || m1.QRISGeneratorDefault;
   }
+
+  if (!QRTheme2Class) {
+    const m2 = await import('autoft-qris/src/qr-generator2.mjs');
+    QRTheme2Class = m2.default || m2.QRISGeneratorTheme2 || m2.QRISGenerator || m2.QRISGeneratorDefault;
+  }
+
+  const Cls = useTheme2 ? QRTheme2Class : QRTheme1Class;
   const localConf = { ...config };
-  return new QRClass(localConf, 'theme1');
+  return new Cls(localConf, useTheme2 ? 'theme2' : 'theme1');
 }
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
-    return res.status(405).json({
-      success: false,
-      message: 'Method not allowed. Use POST.'
-    });
+    return res
+      .status(405)
+      .json({ success: false, message: 'Method not allowed' });
   }
 
   try {
     const body =
       typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    const nominal = Number(body.amount);
+    const { amount, theme = 'theme1' } = body;
+    const nominal = Number(amount);
 
     if (!Number.isFinite(nominal) || nominal <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Amount tidak valid'
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: 'Amount tidak valid' });
     }
 
     if (!config.baseQrString) {
-      return res.status(500).json({
-        success: false,
-        message: 'BASE_QR_STRING belum di-set'
-      });
+      return res
+        .status(500)
+        .json({ success: false, message: 'BASE_QR_STRING belum di-set' });
     }
 
     let qrisGen;
     try {
-      qrisGen = await getGenerator();
+      qrisGen = await getGenerator(theme);
     } catch (e) {
-      console.error('ERROR import qr-generator:', e);
+      console.error('ERROR import qr-generator modules:', e);
       return res.status(500).json({
         success: false,
         stage: 'import-qr-generator',
@@ -67,7 +76,7 @@ module.exports = async (req, res) => {
     const qrString = qrisGen.generateQrString(nominal);
     const qrBuffer = await qrisGen.generateQRWithLogo(qrString);
 
-    const ref = generateRef();
+    const ref = generateRef();  // Menggunakan format custom LEVPAY00001
     const qrBase64 = qrBuffer.toString('base64');
 
     return res.status(200).json({
@@ -75,6 +84,7 @@ module.exports = async (req, res) => {
       data: {
         ref,
         amount: nominal,
+        theme: theme === 'theme2' ? 'theme2' : 'theme1',
         qrString,
         qrImage: `data:image/png;base64,${qrBase64}`
       }
