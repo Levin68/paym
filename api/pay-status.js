@@ -1,31 +1,41 @@
 // api/pay-status.js
 
-const fs = require('fs');
-const path = require('path');
-
-// helper buat handle default / named export
 const _norm = (m) => (m && (m.default || m)) || m;
 
-// ==== 1. Cari file payment-checker.cjs di dalam autoft-qris ====
-let PaymentChecker;
-try {
-  const autoftEntry = require.resolve('autoft-qris');   // lokasi main package
-  let pkgDir = path.dirname(autoftEntry);
+// ==== 1. Coba load PaymentChecker dari beberapa path berbeda ====
+let PaymentChecker = null;
+let loadError = null;
 
-  // naik ke folder "autoft-qris"
-  while (pkgDir && path.basename(pkgDir) !== 'autoft-qris') {
-    pkgDir = path.dirname(pkgDir);
+function tryLoadPaymentChecker() {
+  if (PaymentChecker) return PaymentChecker;
+
+  try {
+    // 1) struktur paling umum: autoft-qris/src/payment-checker.cjs
+    PaymentChecker = _norm(require('autoft-qris/src/payment-checker.cjs'));
+    return PaymentChecker;
+  } catch (e1) {
+    loadError = e1;
   }
 
-  // kalau ada folder src pakai src, kalau nggak langsung pakai root
-  const srcDir = fs.existsSync(path.join(pkgDir, 'src'))
-    ? path.join(pkgDir, 'src')
-    : pkgDir;
+  try {
+    // 2) kalau src nggak ada, coba langsung di root
+    PaymentChecker = _norm(require('autoft-qris/payment-checker.cjs'));
+    return PaymentChecker;
+  } catch (e2) {
+    loadError = e2;
+  }
 
-  // load payment-checker.cjs lalu normalisasi export-nya
-  PaymentChecker = _norm(require(path.join(srcDir, 'payment-checker.cjs')));
-} catch (e) {
-  console.error('Gagal resolve PaymentChecker dari autoft-qris:', e);
+  try {
+    // 3) fallback terakhir: root export (kalau dia pernah export PaymentChecker)
+    const mod = require('autoft-qris');
+    PaymentChecker = _norm(mod.PaymentChecker || mod.paymentChecker || null);
+    if (PaymentChecker) return PaymentChecker;
+  } catch (e3) {
+    loadError = e3;
+  }
+
+  // kalau sampai sini masih gagal, biarin PaymentChecker = null
+  return null;
 }
 
 // ==== 2. Config dari ENV ====
@@ -34,7 +44,7 @@ const config = {
   auth_token: process.env.ORKUT_AUTH_TOKEN
 };
 
-// ==== 3. Normalisasi hasil ke status singkat ====
+// ==== 3. Normalisasi hasil PaymentChecker -> status singkat ====
 function normalizeResult(res) {
   if (!res || typeof res !== 'object') {
     return { status: 'UNKNOWN', raw: res };
@@ -59,7 +69,6 @@ function normalizeResult(res) {
 
 // ==== 4. Handler Vercel Function ====
 module.exports = async (req, res) => {
-  // script.js pakai GET, tapi POST juga dibolehkan
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({
@@ -68,12 +77,14 @@ module.exports = async (req, res) => {
     });
   }
 
-  // pastikan PaymentChecker berhasil diload
-  if (!PaymentChecker) {
+  // pastikan PaymentChecker sudah berhasil diloader
+  const PC = tryLoadPaymentChecker();
+  if (!PC) {
     return res.status(500).json({
       success: false,
       stage: 'load-payment-checker',
-      message: 'PaymentChecker tidak bisa diload dari autoft-qris'
+      message: 'PaymentChecker tidak bisa diload dari autoft-qris',
+      detail: loadError ? String(loadError.message || loadError) : null
     });
   }
 
@@ -128,7 +139,7 @@ module.exports = async (req, res) => {
 
   // --- panggil PaymentChecker ke API OrderKuota ---
   try {
-    const checker = new PaymentChecker({
+    const checker = new PC({
       auth_token: config.auth_token,
       auth_username: config.auth_username
     });
@@ -141,9 +152,9 @@ module.exports = async (req, res) => {
       data: {
         reference,
         amount,
-        status: norm.status       // ini yang dibaca script.js (PAID / UNPAID / dst)
+        status: norm.status
       },
-      raw: norm.raw               // bisa dipantau di Network tab buat debug
+      raw: norm.raw
     });
   } catch (err) {
     console.error('pay-status runtime error:', err);
