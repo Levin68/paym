@@ -1,5 +1,7 @@
 // api/create-qris.js
 
+const { QRISGenerator } = require('autoft-qris');
+
 const config = {
   storeName: process.env.STORE_NAME || 'NEVERMORE',
   auth_username: process.env.ORKUT_AUTH_USERNAME,
@@ -8,45 +10,27 @@ const config = {
   logoPath: null
 };
 
-function generateRef(prefix = 'REF') {
+function generateReference(prefix = 'REF') {
   const ts = Date.now().toString(36).toUpperCase();
   const rand = Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
+  // 16 char cukup buat ID pendek
   return `${prefix}${ts}${rand}`.slice(0, 16);
 }
 
-// cache supaya nggak import berkali-kali
-let QRTheme1Class = null;
-let QRTheme2Class = null;
-
-async function getGenerator(theme) {
-  const useTheme2 = theme === 'theme2';
-
-  if (!QRTheme1Class) {
-    const m1 = await import('autoft-qris/src/qr-generator.mjs');
-    QRTheme1Class = m1.default || m1.QRISGeneratorTheme1 || m1.QRISGenerator || m1.QRISGeneratorDefault;
-  }
-
-  if (!QRTheme2Class) {
-    const m2 = await import('autoft-qris/src/qr-generator2.mjs');
-    QRTheme2Class = m2.default || m2.QRISGeneratorTheme2 || m2.QRISGenerator || m2.QRISGeneratorDefault;
-  }
-
-  const Cls = useTheme2 ? QRTheme2Class : QRTheme1Class;
-  const localConf = { ...config };
-  return new Cls(localConf, useTheme2 ? 'theme2' : 'theme1');
-}
-
 module.exports = async (req, res) => {
+  // Hanya boleh POST
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
+    res.setHeader('Allow', ['POST']);
     return res
       .status(405)
-      .json({ success: false, message: 'Method not allowed' });
+      .json({ success: false, message: 'Method not allowed. Use POST.' });
   }
 
   try {
+    // body bisa sudah object, bisa juga string mentah
     const body =
       typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+
     const { amount, theme = 'theme1' } = body;
     const nominal = Number(amount);
 
@@ -57,47 +41,45 @@ module.exports = async (req, res) => {
     }
 
     if (!config.baseQrString) {
-      return res
-        .status(500)
-        .json({ success: false, message: 'BASE_QR_STRING belum di-set' });
-    }
-
-    let qrisGen;
-    try {
-      qrisGen = await getGenerator(theme);
-    } catch (e) {
-      console.error('ERROR import qr-generator modules:', e);
       return res.status(500).json({
         success: false,
-        stage: 'import-qr-generator',
-        message: e.message,
-        stack: e.stack
+        message: 'BASE_QR_STRING belum di-set di Environment Vercel'
       });
     }
 
-    const qrString = qrisGen.generateQrString(nominal);
-    const qrBuffer = await qrisGen.generateQRWithLogo(qrString);
+    // theme1 / theme2 (sesuai autoft-qris)
+    const themeName = theme === 'theme2' ? 'theme2' : 'theme1';
 
-    const ref = generateRef();
-    const qrBase64 = qrBuffer.toString('base64');
+    // pakai API resmi dari package
+    const generator = new QRISGenerator(
+      {
+        storeName: config.storeName,
+        auth_username: config.auth_username,
+        auth_token: config.auth_token,
+        baseQrString: config.baseQrString,
+        logoPath: config.logoPath
+      },
+      themeName
+    );
+
+    // cuma butuh string QRIS, browser yg generate gambar
+    const qrString = generator.generateQrString(nominal);
+    const reference = generateReference();
 
     return res.status(200).json({
       success: true,
       data: {
-        ref,
+        reference,          // <== sama seperti yg dipakai di js/script.js
         amount: nominal,
-        theme: theme === 'theme2' ? 'theme2' : 'theme1',
-        qrString,
-        qrImage: `data:image/png;base64,${qrBase64}`
+        theme: themeName,
+        qrString
       }
     });
   } catch (err) {
     console.error('create-qris error:', err);
     return res.status(500).json({
       success: false,
-      stage: 'handler',
-      message: err.message || 'Internal server error',
-      stack: err.stack
+      message: err.message || 'Internal server error di create-qris'
     });
   }
 };
