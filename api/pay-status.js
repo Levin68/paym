@@ -1,22 +1,40 @@
 // api/pay-status.js
 
-// Ambil PaymentChecker langsung dari package, sesuai README autoft-qris:
-// const { PaymentChecker } = require('autoft-qris');
+const fs = require('fs');
+const path = require('path');
+
+// helper buat handle default / named export
+const _norm = (m) => (m && (m.default || m)) || m;
+
+// ==== 1. Cari file payment-checker.cjs di dalam autoft-qris ====
 let PaymentChecker;
 try {
-  const mod = require('autoft-qris');
-  PaymentChecker = mod.PaymentChecker;
+  const autoftEntry = require.resolve('autoft-qris');   // lokasi main package
+  let pkgDir = path.dirname(autoftEntry);
+
+  // naik ke folder "autoft-qris"
+  while (pkgDir && path.basename(pkgDir) !== 'autoft-qris') {
+    pkgDir = path.dirname(pkgDir);
+  }
+
+  // kalau ada folder src pakai src, kalau nggak langsung pakai root
+  const srcDir = fs.existsSync(path.join(pkgDir, 'src'))
+    ? path.join(pkgDir, 'src')
+    : pkgDir;
+
+  // load payment-checker.cjs lalu normalisasi export-nya
+  PaymentChecker = _norm(require(path.join(srcDir, 'payment-checker.cjs')));
 } catch (e) {
-  console.error('Gagal require autoft-qris:', e);
+  console.error('Gagal resolve PaymentChecker dari autoft-qris:', e);
 }
 
-// Konfigurasi dari ENV (HARUS di-set di Vercel)
+// ==== 2. Config dari ENV ====
 const config = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
   auth_token: process.env.ORKUT_AUTH_TOKEN
 };
 
-// Normalisasi hasil PaymentChecker -> status yang rapi
+// ==== 3. Normalisasi hasil ke status singkat ====
 function normalizeResult(res) {
   if (!res || typeof res !== 'object') {
     return { status: 'UNKNOWN', raw: res };
@@ -39,8 +57,9 @@ function normalizeResult(res) {
   };
 }
 
+// ==== 4. Handler Vercel Function ====
 module.exports = async (req, res) => {
-  // script.js pakai GET, tapi boleh juga POST
+  // script.js pakai GET, tapi POST juga dibolehkan
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({
@@ -49,16 +68,16 @@ module.exports = async (req, res) => {
     });
   }
 
-  // Pastikan PaymentChecker kebaca
+  // pastikan PaymentChecker berhasil diload
   if (!PaymentChecker) {
     return res.status(500).json({
       success: false,
-      stage: 'require-autoft-qris',
-      message: 'PaymentChecker tidak ditemukan di autoft-qris'
+      stage: 'load-payment-checker',
+      message: 'PaymentChecker tidak bisa diload dari autoft-qris'
     });
   }
 
-  // --- Ambil reference & amount ---
+  // --- ambil reference & amount ---
   let reference = '';
   let amount = 0;
 
@@ -107,7 +126,7 @@ module.exports = async (req, res) => {
     });
   }
 
-  // --- Panggil PaymentChecker ke API OrderKuota ---
+  // --- panggil PaymentChecker ke API OrderKuota ---
   try {
     const checker = new PaymentChecker({
       auth_token: config.auth_token,
@@ -122,9 +141,9 @@ module.exports = async (req, res) => {
       data: {
         reference,
         amount,
-        status: norm.status  // ini yang dibaca script.js (PAID / UNPAID / dst)
+        status: norm.status       // ini yang dibaca script.js (PAID / UNPAID / dst)
       },
-      raw: norm.raw // buat debug di Network tab
+      raw: norm.raw               // bisa dipantau di Network tab buat debug
     });
   } catch (err) {
     console.error('pay-status runtime error:', err);
