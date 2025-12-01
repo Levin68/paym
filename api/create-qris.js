@@ -1,5 +1,6 @@
 // api/create-qris.js
 
+// --- KONFIGURASI DARI ENV ---
 const config = {
   storeName: process.env.STORE_NAME || 'NEVERMORE',
   auth_username: process.env.ORKUT_AUTH_USERNAME,
@@ -8,48 +9,56 @@ const config = {
   logoPath: null
 };
 
-function generateReference(prefix = 'REF') {
+function generateRef(prefix = 'REF') {
   const ts = Date.now().toString(36).toUpperCase();
   const rand = Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
   return `${prefix}${ts}${rand}`.slice(0, 16);
 }
 
+// cache supaya nggak require berkali-kali
 let QRISGeneratorClass = null;
 
-async function getGenerator(themeName) {
+function getGenerator(theme = 'theme1') {
   if (!QRISGeneratorClass) {
-    const m = await import('autoft-qris');
-    const base = m.default || m;
+    // 👉 PENTING: pakai entry utama package, BUKAN /src/...
+    const mod = require('autoft-qris');
 
+    // coba beberapa kemungkinan export
     QRISGeneratorClass =
-      base.QRISGenerator ||
-      base.QRISGeneratorTheme1 ||
-      base.QRISGeneratorDefault ||
-      base;
+      mod.QRISGenerator ||
+      mod.default ||
+      mod.QRISGeneratorTheme1 ||
+      mod.QRISGeneratorDefault ||
+      mod;
   }
 
-  const localConf = {
-    storeName: config.storeName,
-    auth_username: config.auth_username,
-    auth_token: config.auth_token,
-    baseQrString: config.baseQrString,
-    logoPath: config.logoPath
-  };
-
-  return new QRISGeneratorClass(localConf, themeName);
+  const localConf = { ...config };
+  return new QRISGeneratorClass(localConf, theme === 'theme2' ? 'theme2' : 'theme1');
 }
 
 module.exports = async (req, res) => {
+  // biar kalau dibuka di browser langsung (GET) nggak crash
+  if (req.method === 'GET') {
+    return res.status(405).json({
+      success: false,
+      message: 'Gunakan POST /api/create-qris',
+      method: 'GET'
+    });
+  }
+
   if (req.method !== 'POST') {
-    res.setHeader('Allow', ['POST']);
+    res.setHeader('Allow', 'POST');
     return res
       .status(405)
-      .json({ success: false, message: 'Method not allowed. Use POST.' });
+      .json({ success: false, message: 'Method tidak diizinkan' });
   }
 
   try {
+    // body kadang sudah objek, kadang string (tergantung Vercel)
     const body =
-      typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      typeof req.body === 'string'
+        ? JSON.parse(req.body || '{}')
+        : (req.body || {});
 
     const { amount, theme = 'theme1' } = body;
     const nominal = Number(amount);
@@ -61,36 +70,37 @@ module.exports = async (req, res) => {
     }
 
     if (!config.baseQrString) {
-      return res.status(500).json({
-        success: false,
-        message: 'BASE_QR_STRING belum di-set di Environment Vercel'
-      });
+      return res
+        .status(500)
+        .json({ success: false, message: 'BASE_QR_STRING belum di-set' });
     }
 
-    const themeName = theme === 'theme2' ? 'theme2' : 'theme1';
-
-    let generator;
+    let qrisGen;
     try {
-      generator = await getGenerator(themeName);
+      qrisGen = getGenerator(theme);
     } catch (e) {
-      console.error('ERROR import autoft-qris:', e);
+      console.error('ERROR load autoft-qris:', e);
       return res.status(500).json({
         success: false,
-        stage: 'import-autoft-qris',
-        message: e.message || 'Gagal load autoft-qris'
+        stage: 'load-autoft-qris',
+        message: e.message
       });
     }
 
-    const qrString = generator.generateQrString(nominal);
-    const reference = generateReference();
+    const qrString = qrisGen.generateQrString(nominal);
+    const qrBuffer = await qrisGen.generateQRWithLogo(qrString);
+
+    const ref = generateRef();
+    const qrBase64 = qrBuffer.toString('base64');
 
     return res.status(200).json({
       success: true,
       data: {
-        reference,
+        reference: ref,
         amount: nominal,
-        theme: themeName,
-        qrString
+        theme: theme === 'theme2' ? 'theme2' : 'theme1',
+        qrString,
+        qrImage: `data:image/png;base64,${qrBase64}`
       }
     });
   } catch (err) {
@@ -98,7 +108,7 @@ module.exports = async (req, res) => {
     return res.status(500).json({
       success: false,
       stage: 'handler',
-      message: err.message || 'Internal server error di create-qris'
+      message: err.message || 'Internal server error'
     });
   }
 };
