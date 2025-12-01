@@ -1,7 +1,5 @@
 // api/create-qris.js
 
-const { QRISGenerator } = require('autoft-qris');
-
 const config = {
   storeName: process.env.STORE_NAME || 'NEVERMORE',
   auth_username: process.env.ORKUT_AUTH_USERNAME,
@@ -13,12 +11,38 @@ const config = {
 function generateReference(prefix = 'REF') {
   const ts = Date.now().toString(36).toUpperCase();
   const rand = Math.floor(Math.random() * 1e6).toString(36).toUpperCase();
-  // 16 char cukup buat ID pendek
-  return `${prefix}${ts}${rand}`.slice(0, 16);
+  return `${prefix}${ts}${rand}`.slice(0, 16); // max 16 char
+}
+
+// cache class supaya nggak import berkali-kali
+let QRISGeneratorClass = null;
+
+async function getGenerator(themeName) {
+  if (!QRISGeneratorClass) {
+    // IMPORT ENTRY RESMI PACKAGE
+    const m = await import('autoft-qris');
+    const base = m.default || m;
+
+    QRISGeneratorClass =
+      base.QRISGenerator ||            // sesuai README
+      base.QRISGeneratorTheme1 ||      // jaga-jaga
+      base.QRISGeneratorDefault ||     // jaga-jaga
+      base;                            // last fallback
+  }
+
+  const localConf = {
+    storeName: config.storeName,
+    auth_username: config.auth_username,
+    auth_token: config.auth_token,
+    baseQrString: config.baseQrString,
+    logoPath: config.logoPath
+  };
+
+  return new QRISGeneratorClass(localConf, themeName);
 }
 
 module.exports = async (req, res) => {
-  // Hanya boleh POST
+  // JANGAN IMPORT APA2 DI ATAS SINI, cek method dulu
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
     return res
@@ -27,7 +51,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // body bisa sudah object, bisa juga string mentah
+    // parse body (string / object)
     const body =
       typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
 
@@ -47,29 +71,29 @@ module.exports = async (req, res) => {
       });
     }
 
-    // theme1 / theme2 (sesuai autoft-qris)
     const themeName = theme === 'theme2' ? 'theme2' : 'theme1';
 
-    // pakai API resmi dari package
-    const generator = new QRISGenerator(
-      {
-        storeName: config.storeName,
-        auth_username: config.auth_username,
-        auth_token: config.auth_token,
-        baseQrString: config.baseQrString,
-        logoPath: config.logoPath
-      },
-      themeName
-    );
+    let generator;
+    try {
+      generator = await getGenerator(themeName);
+    } catch (e) {
+      console.error('ERROR import autoft-qris:', e);
+      return res.status(500).json({
+        success: false,
+        stage: 'import-autoft-qris',
+        message: e.message || 'Gagal load autoft-qris'
+      });
+    }
 
-    // cuma butuh string QRIS, browser yg generate gambar
+    // pake API resmi dari lib
     const qrString = generator.generateQrString(nominal);
+
     const reference = generateReference();
 
     return res.status(200).json({
       success: true,
       data: {
-        reference,          // <== sama seperti yg dipakai di js/script.js
+        reference,
         amount: nominal,
         theme: themeName,
         qrString
@@ -79,6 +103,7 @@ module.exports = async (req, res) => {
     console.error('create-qris error:', err);
     return res.status(500).json({
       success: false,
+      stage: 'handler',
       message: err.message || 'Internal server error di create-qris'
     });
   }
