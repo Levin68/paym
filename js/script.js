@@ -25,7 +25,7 @@ function setError(msg) {
 }
 
 function renderQR(qrString) {
-  // bersihin container QR dulu
+  // bersihin dulu
   qrcodeContainer.innerHTML = '';
 
   qrInstance = new QRCode(qrcodeContainer, {
@@ -57,11 +57,10 @@ async function createQR() {
       body: JSON.stringify({ amount })
     });
 
-    const data = await res.json().catch(() => null);
+    const data = await res.json();
 
-    if (!res.ok || !data || !data.success) {
-      const msg = (data && data.message) || 'Gagal membuat QR';
-      throw new Error(msg);
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || 'Gagal membuat QR');
     }
 
     const { reference, amount: amt, qrString } = data.data;
@@ -91,23 +90,19 @@ async function checkPayment() {
   if (!currentRef || !currentAmount) return;
 
   try {
-    // endpoint cek status di server kamu: /api/pay-status
     const url = `/api/pay-status?reference=${encodeURIComponent(
       currentRef
     )}&amount=${currentAmount}`;
 
     const res = await fetch(url);
-    const data = await res.json().catch(() => null);
+    const data = await res.json();
 
-    if (!res.ok || !data || !data.success) {
-      console.warn(
-        'Gagal cek pembayaran:',
-        (data && data.message) || res.statusText
-      );
+    if (!res.ok || !data.success) {
+      console.warn('Gagal cek pembayaran:', data.message || res.statusText);
       return;
     }
 
-    const status = data.data.status; // 'PAID', 'UNPAID', dll
+    const status = data.data.status; // 'PAID', 'UNPAID', etc
 
     if (status === 'PAID') {
       statusText.textContent = '✅ Pembayaran berhasil (PAID)';
@@ -134,7 +129,7 @@ async function checkPayment() {
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
-  // cek tiap 1 detik
+  // tiap 1 detik
   pollTimer = setInterval(checkPayment, 1000);
 }
 
