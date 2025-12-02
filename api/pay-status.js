@@ -5,23 +5,19 @@ async function getPaymentChecker() {
 
   paymentCheckerPromise = (async () => {
     try {
-      // Load modul autoft-qris dan pastikan PaymentChecker berhasil di-load
-      try {
-        console.log("Trying to load autoft-qris/src/payment-checker.mjs...");
-        const m1 = await import('autoft-qris/src/payment-checker.mjs');
-        const C1 = m1.PaymentChecker || m1.default || m1;
-        console.log("Loaded autoft-qris/src/payment-checker.mjs:", C1);
-        if (C1) return C1;
-      } catch (e1) {
-        console.error("Error loading autoft-qris/src/payment-checker.mjs:", e1);
-        throw new Error('Error loading payment checker module');
+      console.log("Attempting to load payment checker...");
+      const m1 = await import('autoft-qris/src/payment-checker.mjs');
+      const PaymentChecker = m1.PaymentChecker || m1.default;
+
+      if (!PaymentChecker) {
+        throw new Error('PaymentChecker tidak ditemukan dalam module autoft-qris');
       }
 
-      // Fallback check (if needed)
-      throw new Error('PaymentChecker tidak ditemukan');
-    } catch (e) {
-      console.error("Error loading payment checker:", e);
-      throw e;
+      console.log("PaymentChecker berhasil dimuat.");
+      return new PaymentChecker();  // Instantiate PaymentChecker
+    } catch (error) {
+      console.error('Gagal memuat PaymentChecker:', error);
+      throw error;
     }
   })();
 
@@ -48,9 +44,10 @@ module.exports = async (req, res) => {
     }
 
     const paymentChecker = await getPaymentChecker();
-    const status = await paymentChecker.check(reference); // Misalnya, cek status menggunakan reference
 
-    // Menentukan status berdasarkan hasil pengecekan
+    // Check payment status, use correct method of paymentChecker
+    const status = await paymentChecker.checkPaymentStatus(reference); // Pastikan checkPaymentStatus ada
+
     let resultStatus = 'UNKNOWN';
     let errorDetail = '';
 
