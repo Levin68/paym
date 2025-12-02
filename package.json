@@ -7,6 +7,10 @@
     "dev": "vercel dev",
     "start": "node server.js"
   },
+  "engines": {
+    "node": "20.x"
+  },
+  "type": "commonjs",  // Menambahkan tipe CommonJS untuk mendukung require()
   "dependencies": {
     "autoft-qris": "^0.0.9"
   }
