@@ -1,17 +1,13 @@
 {
   "name": "paym",
   "version": "1.0.0",
-  "description": "Simple QRIS payment demo using autoft-qris + Vercel serverless",
+  "description": "QRIS Payment Gateway Demo",
   "main": "index.js",
   "scripts": {
     "dev": "vercel dev",
     "start": "node server.js"
   },
   "dependencies": {
-    "node-fetch": "^2.6.1",
-    "autoft-qris": "^0.0.9"
-  },
-  "devDependencies": {
-    "vercel": "^23.0.1"
+    "axios": "^0.21.1"
   }
 }
