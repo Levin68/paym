@@ -4,11 +4,14 @@
   "description": "Simple QRIS payment demo using autoft-qris + Vercel serverless",
   "main": "index.js",
   "scripts": {
-    "dev": "vercel dev",
-    "start": "node server.js"
+    "dev": "vercel dev",        // Untuk pengembangan di Vercel lokal
+    "start": "node server.js"   // Untuk menjalankan aplikasi server secara langsung
   },
   "dependencies": {
-    "node-fetch": "^2.6.1",
-    "autoft-qris": "^0.0.9" 
+    "node-fetch": "^2.6.1",     // Menggunakan node-fetch untuk melakukan HTTP request
+    "autoft-qris": "^0.0.9"     // Modul QRIS
+  },
+  "devDependencies": {
+    "vercel": "^23.0.1"         // Untuk melakukan deployment ke Vercel
   }
 }
