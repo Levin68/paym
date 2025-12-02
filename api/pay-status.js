@@ -1,5 +1,5 @@
 module.exports = async (req, res) => {
-  console.log("Request received for /pay-status");
+  console.log("Received request for /pay-status");
 
   let reference = req.query.reference || req.body.reference;
   let amount = req.query.amount || req.body.amount;
