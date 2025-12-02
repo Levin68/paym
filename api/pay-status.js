@@ -1,7 +1,5 @@
 // api/pay-status.js
 
-// Ganti import menjadi require
-const { PaymentChecker } = require('autoft-qris'); // Pastikan menggunakan `require()`
 const _norm = (m) => (m && (m.default || m)) || m;
 
 function ok(res, body) {
@@ -14,125 +12,97 @@ function fail(res, code, stage, message, extra = {}) {
   return res.status(code).json({ success: false, stage, message, ...extra });
 }
 
-// ---------- 1) ENV config ----------
 const CONFIG = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
   auth_token: process.env.ORKUT_AUTH_TOKEN,
 };
 
-// ---------- 2) Normalizer super-aman ----------
+// 🚀 FINAL: langsung load CJS PaymentChecker
+let PaymentChecker = null;
+
+function loadPaymentChecker() {
+  if (PaymentChecker) return PaymentChecker;
+
+  try {
+    const c = require('autoft-qris/src/payment-checker.cjs');
+    PaymentChecker = _norm(c.PaymentChecker || c);
+    return PaymentChecker;
+  } catch (e) {
+    console.error("PAYMENT CHECKER LOAD FAILED:", e);
+    throw new Error("Cannot load PaymentChecker CJS: " + e.message);
+  }
+}
+
 function normalizeResult(res) {
-  // jika res bukan object, langsung UNKNOWN
   if (!res || typeof res !== 'object') {
     return { status: 'UNKNOWN', amount: 0, ref: '', paidAt: null, raw: res };
   }
-  // ambil payload umum
   let data = res.data ?? res.result ?? res;
   if (Array.isArray(data)) data = data[0] ?? {};
   if (!data || typeof data !== 'object') data = {};
 
-  const statusRaw = [
-    data.status,
-    data.payment_status,
-    data.transaction_status
-  ].find(Boolean);
+  const statusRaw = data.status || data.payment_status || data.transaction_status;
+  const amountRaw = data.amount || data.gross_amount || data.total || data.nominal;
 
-  const amountRaw = data.amount ?? data.gross_amount ?? data.total ?? data.nominal;
-  const refRaw = data.ref ?? data.reference ?? data.order_id ?? data.transaction_id;
-  const paidAtRaw = data.date ?? data.paid_at ?? data.paidAt ?? data.transaction_time ?? data.settled_at;
-
-  const status = (statusRaw ? String(statusRaw) : 'UNKNOWN').toUpperCase();
-  const amount = Number(amountRaw ?? 0);
-  const ref = refRaw ? String(refRaw) : '';
-  const paidAt = paidAtRaw ?? null;
-
-  return { status, amount, ref, paidAt, raw: res };
+  return {
+    status: (statusRaw ? String(statusRaw) : "UNKNOWN").toUpperCase(),
+    amount: Number(amountRaw || 0),
+    raw: res
+  };
 }
 
-// ---------- 3) Handler Vercel ----------
 module.exports = async (req, res) => {
   try {
-    console.log("Start request processing...");
-    
-    if (req.method !== 'GET' && req.method !== 'POST') {
-      res.setHeader('Allow', 'GET, POST');
-      return fail(res, 405, 'method', 'Gunakan GET/POST');
+    let reference, amount;
+
+    if (req.method === "GET") {
+      reference = String(req.query.reference || "").trim();
+      amount = Number(req.query.amount || 0);
+    } else {
+      const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+      reference = String(body.reference || "").trim();
+      amount = Number(body.amount || 0);
     }
 
-    // parse input
-    let reference = '';
-    let amount = 0;
-    try {
-      if (req.method === 'GET') {
-        reference = String(req.query.reference ?? '').trim();
-        amount = Number(req.query.amount ?? 0);
-      } else {
-        const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-        reference = String(body.reference ?? '').trim();
-        amount = Number(body.amount ?? 0);
-      }
-      console.log(`Parsed input - Reference: ${reference}, Amount: ${amount}`);
-    } catch (e) {
-      console.error("Error parsing body or query:", e);
-      return fail(res, 400, 'parse', 'Body / query tidak valid');
-    }
-
-    if (!reference) return fail(res, 400, 'validate', 'reference wajib diisi');
-    if (!Number.isFinite(amount) || amount <= 0) return fail(res, 400, 'validate', 'amount tidak valid');
+    if (!reference) return fail(res, 400, "validate", "reference wajib diisi");
+    if (!amount || amount <= 0) return fail(res, 400, "validate", "amount tidak valid");
 
     if (!CONFIG.auth_username || !CONFIG.auth_token) {
-      console.error("Missing configuration credentials.");
-      return fail(res, 500, 'config', 'ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum di-set di ENV');
+      return fail(res, 500, "config", "ENV API tidak lengkap");
     }
 
-    // load PaymentChecker
-    let PaymentChecker;
+    // Load checker (CJS only)
+    let CheckerClass;
     try {
-      console.log("Loading PaymentChecker...");
-      PaymentChecker = await getPaymentChecker();
-      console.log("PaymentChecker loaded:", PaymentChecker);
+      CheckerClass = loadPaymentChecker();
     } catch (e) {
-      console.error("Failed to load PaymentChecker:", e);
-      return fail(res, 500, 'load-payment-checker', 'PaymentChecker tidak bisa diload dari autoft-qris', { detail: String(e?.message || e) });
+      return fail(res, 500, "load-payment-checker", e.message);
     }
 
-    // single check (NO polling di serverless)
+    const checker = new CheckerClass({
+      auth_username: CONFIG.auth_username,
+      auth_token: CONFIG.auth_token,
+    });
+
     let raw;
     try {
-      console.log("Calling checkPaymentStatus...");
-      const checker = new PaymentChecker({
-        auth_token: CONFIG.auth_token,
-        auth_username: CONFIG.auth_username,
-      });
       raw = await checker.checkPaymentStatus(reference, amount);
-      console.log("Payment status response:", raw);
     } catch (e) {
-      console.error("Error calling checkPaymentStatus:", e);
-      return fail(res, 502, 'upstream', 'Gagal memanggil API penyedia', { detail: String(e?.message || e) });
+      return fail(res, 502, "upstream", "API provider error", { detail: e.message });
     }
 
     const norm = normalizeResult(raw);
 
-    // optional: ketatkan paid status
-    const PAID = new Set(['PAID', 'SUCCESS', 'COMPLETED', 'SETTLEMENT', 'CAPTURE', 'CONFIRMED', 'SUCCESSFUL', 'PAID_OFF', 'DONE']);
-    const amountOK = Math.abs(Math.round(norm.amount || 0) - Math.round(amount)) <= 100; // tolerance Rp100
-    const isPaid = PAID.has(norm.status) && amountOK;
-
     return ok(res, {
       success: true,
-      data: {
-        reference,
-        requested_amount: amount,
-        provider_amount: Number(norm.amount || 0),
-        amount_match: amountOK,
-        status: norm.status,
-        isPaid,
-        paidAt: norm.paidAt || null,
-      },
-      raw: norm.raw, // untuk debugging di logs/FE
+      reference,
+      amount,
+      status: norm.status,
+      raw: norm.raw
     });
+
   } catch (err) {
-    console.error('[pay-status] fatal:', err);
-    return fail(res, 500, 'fatal', err?.message || 'Internal server error');
+    console.error("[pay-status] fatal:", err);
+    return fail(res, 500, "fatal", err.message);
   }
 };
