@@ -83,20 +83,26 @@ module.exports = async (req, res) => {
     // load PaymentChecker
     let PaymentChecker;
     try {
+      console.log("Loading PaymentChecker...");
       PaymentChecker = await getPaymentChecker();
+      console.log("PaymentChecker loaded:", PaymentChecker);
     } catch (e) {
+      console.error("Failed to load PaymentChecker:", e);
       return fail(res, 500, 'load-payment-checker', 'PaymentChecker tidak bisa diload dari autoft-qris', { detail: String(e?.message || e) });
     }
 
     // single check (NO polling di serverless)
     let raw;
     try {
+      console.log("Calling checkPaymentStatus...");
       const checker = new PaymentChecker({
         auth_token: CONFIG.auth_token,
         auth_username: CONFIG.auth_username,
       });
       raw = await checker.checkPaymentStatus(reference, amount);
+      console.log("Payment status response:", raw);
     } catch (e) {
+      console.error("Error calling checkPaymentStatus:", e);
       return fail(res, 502, 'upstream', 'Gagal memanggil API penyedia', { detail: String(e?.message || e) });
     }
 
