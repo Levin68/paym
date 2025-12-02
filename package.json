@@ -10,7 +10,7 @@
   "engines": {
     "node": "20.x"
   },
-  "type": "commonjs",  // Menambahkan tipe CommonJS untuk mendukung require()
+  "type": "commonjs",
   "dependencies": {
     "autoft-qris": "^0.0.9"
   }
