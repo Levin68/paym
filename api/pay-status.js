@@ -2,107 +2,158 @@
 
 const _norm = (m) => (m && (m.default || m)) || m;
 
-function ok(res, body) {
-  res.setHeader('Cache-Control', 'no-store');
-  return res.status(200).json(body);
-}
-
-function fail(res, code, stage, message, extra = {}) {
-  res.setHeader('Cache-Control', 'no-store');
-  return res.status(code).json({ success: false, stage, message, ...extra });
-}
-
+// ===== 1. ENV CONFIG =====
 const CONFIG = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
-  auth_token: process.env.ORKUT_AUTH_TOKEN,
+  auth_token: process.env.ORKUT_AUTH_TOKEN
 };
 
-// 🚀 FINAL: langsung load CJS PaymentChecker
+// ===== 2. LOAD PAYMENTCHECKER (CJS ONLY) =====
 let PaymentChecker = null;
+let loaderError = null;
 
-function loadPaymentChecker() {
-  if (PaymentChecker) return PaymentChecker;
-
-  try {
-    const c = require('autoft-qris/src/payment-checker.cjs');
-    PaymentChecker = _norm(c.PaymentChecker || c);
-    return PaymentChecker;
-  } catch (e) {
-    console.error("PAYMENT CHECKER LOAD FAILED:", e);
-    throw new Error("Cannot load PaymentChecker CJS: " + e.message);
+try {
+  const mod = require('autoft-qris/src/payment-checker.cjs');
+  PaymentChecker = _norm(mod.PaymentChecker || mod);
+  if (!PaymentChecker) {
+    loaderError = new Error('PaymentChecker class tidak ditemukan di CJS');
   }
+} catch (e) {
+  loaderError = e;
 }
 
-function normalizeResult(res) {
-  if (!res || typeof res !== 'object') {
-    return { status: 'UNKNOWN', amount: 0, ref: '', paidAt: null, raw: res };
+// ===== 3. NORMALIZER STATUS =====
+function normalizeStatus(raw) {
+  if (!raw || typeof raw !== 'object') {
+    return 'UNKNOWN';
   }
-  let data = res.data ?? res.result ?? res;
+
+  let data = raw.data ?? raw.result ?? raw;
   if (Array.isArray(data)) data = data[0] ?? {};
   if (!data || typeof data !== 'object') data = {};
 
-  const statusRaw = data.status || data.payment_status || data.transaction_status;
-  const amountRaw = data.amount || data.gross_amount || data.total || data.nominal;
+  const statusRaw =
+    data.status ||
+    data.payment_status ||
+    data.transaction_status;
 
-  return {
-    status: (statusRaw ? String(statusRaw) : "UNKNOWN").toUpperCase(),
-    amount: Number(amountRaw || 0),
-    raw: res
-  };
+  if (!statusRaw) return 'UNKNOWN';
+  return String(statusRaw).toUpperCase();
 }
 
-module.exports = async (req, res) => {
-  try {
-    let reference, amount;
+// ===== 4. UNIFIED RESPONSE =====
+function respond(res, code, { success, reference, amount, status, raw }) {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(code).json({
+    success: Boolean(success),
+    reference: reference || '',
+    amount: Number(amount || 0),
+    status: status || 'UNKNOWN',
+    raw: raw ?? null
+  });
+}
 
-    if (req.method === "GET") {
-      reference = String(req.query.reference || "").trim();
+// ===== 5. HANDLER =====
+module.exports = async (req, res) => {
+  // cuma allow GET & POST
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST');
+    return respond(res, 405, {
+      success: false,
+      reference: '',
+      amount: 0,
+      status: 'UNKNOWN',
+      raw: { success: false, error: 'Method not allowed' }
+    });
+  }
+
+  // --- parse input ---
+  let reference = '';
+  let amount = 0;
+
+  try {
+    if (req.method === 'GET') {
+      reference = String(req.query.reference || '').trim();
       amount = Number(req.query.amount || 0);
     } else {
-      const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-      reference = String(body.reference || "").trim();
+      const body =
+        typeof req.body === 'string'
+          ? JSON.parse(req.body || '{}')
+          : (req.body || {});
+      reference = String(body.reference || '').trim();
       amount = Number(body.amount || 0);
     }
-
-    if (!reference) return fail(res, 400, "validate", "reference wajib diisi");
-    if (!amount || amount <= 0) return fail(res, 400, "validate", "amount tidak valid");
-
-    if (!CONFIG.auth_username || !CONFIG.auth_token) {
-      return fail(res, 500, "config", "ENV API tidak lengkap");
-    }
-
-    // Load checker (CJS only)
-    let CheckerClass;
-    try {
-      CheckerClass = loadPaymentChecker();
-    } catch (e) {
-      return fail(res, 500, "load-payment-checker", e.message);
-    }
-
-    const checker = new CheckerClass({
-      auth_username: CONFIG.auth_username,
-      auth_token: CONFIG.auth_token,
-    });
-
-    let raw;
-    try {
-      raw = await checker.checkPaymentStatus(reference, amount);
-    } catch (e) {
-      return fail(res, 502, "upstream", "API provider error", { detail: e.message });
-    }
-
-    const norm = normalizeResult(raw);
-
-    return ok(res, {
-      success: true,
+  } catch (e) {
+    return respond(res, 400, {
+      success: false,
       reference,
       amount,
-      status: norm.status,
-      raw: norm.raw
+      status: 'UNKNOWN',
+      raw: { success: false, error: 'Body / query tidak valid', detail: String(e.message || e) }
+    });
+  }
+
+  if (!reference || !Number.isFinite(amount) || amount <= 0) {
+    return respond(res, 400, {
+      success: false,
+      reference,
+      amount,
+      status: 'UNKNOWN',
+      raw: { success: false, error: 'reference/amount tidak valid' }
+    });
+  }
+
+  if (!CONFIG.auth_username || !CONFIG.auth_token) {
+    return respond(res, 500, {
+      success: false,
+      reference,
+      amount,
+      status: 'UNKNOWN',
+      raw: { success: false, error: 'ENV ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum di-set' }
+    });
+  }
+
+  if (!PaymentChecker || loaderError) {
+    return respond(res, 500, {
+      success: false,
+      reference,
+      amount,
+      status: 'UNKNOWN',
+      raw: {
+        success: false,
+        error: 'PaymentChecker tidak bisa diload dari autoft-qris',
+        detail: String(loaderError && loaderError.message ? loaderError.message : loaderError)
+      }
+    });
+  }
+
+  // --- call PaymentChecker ---
+  let raw;
+  try {
+    const checker = new PaymentChecker({
+      auth_username: CONFIG.auth_username,
+      auth_token: CONFIG.auth_token
     });
 
-  } catch (err) {
-    console.error("[pay-status] fatal:", err);
-    return fail(res, 500, "fatal", err.message);
+    raw = await checker.checkPaymentStatus(reference, amount);
+  } catch (e) {
+    // kalau HTTP error / network error dsb → bungkus jadi raw error
+    raw = {
+      success: false,
+      error: 'Gagal cek status pembayaran: ' + String(e && e.message ? e.message : e)
+    };
   }
+
+  const status = normalizeStatus(raw);
+
+  // SESUAI PERMINTAAN:
+  // struktur SELALU:
+  // { success: true/false, reference, amount, status, raw }
+  return respond(res, 200, {
+    success: true, // top-level tetap true, walau raw.success bisa false
+    reference,
+    amount,
+    status,
+    raw
+  });
 };
