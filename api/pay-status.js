@@ -1,65 +1,82 @@
-const _norm = (m) => (m && (m.default || m)) || m;
-
-// =========================
-// 1. Loader PaymentChecker (ESM & CommonJS)
-// =========================
-
-let paymentCheckerPromise = null;
-let lastLoadError = null;
-
-async function getPaymentChecker() {
-  if (paymentCheckerPromise) return paymentCheckerPromise;
-
-  paymentCheckerPromise = (async () => {
-    try {
-      // 1) coba path ESM spesifik dulu
-      try {
-        const m1 = await import('autoft-qris/src/payment-checker.mjs');
-        const C1 = _norm(m1.PaymentChecker || m1.default || m1);
-        if (C1) return C1;
-      } catch (e1) {
-        lastLoadError = e1;
-      }
-
-      // 2) coba jika ada di root paket
-      try {
-        const m2 = await import('autoft-qris/payment-checker.mjs');
-        const C2 = _norm(m2.PaymentChecker || m2.default || m2);
-        if (C2) return C2;
-      } catch (e2) {
-        lastLoadError = e2;
-      }
-
-      // 3) fallback: Coba menggunakan require
-      try {
-        const C3 = require('autoft-qris').PaymentChecker || require('autoft-qris/src/payment-checker.cjs');
-        if (C3) return C3;
-      } catch (e3) {
-        lastLoadError = e3;
-      }
-
-      throw lastLoadError || new Error('PaymentChecker tidak ditemukan');
-    } catch (e) {
-      lastLoadError = e;
-      throw e;
-    }
-  })();
-
-  return paymentCheckerPromise;
-}
-
-// =========================
-// 2. Config ENV
-// =========================
-
+const { PaymentChecker } = require('autoft-qris'); // Pastikan untuk mengimpor modul PaymentChecker
 const config = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
-  auth_token: process.env.ORKUT_AUTH_TOKEN
+  auth_token: process.env.ORKUT_AUTH_TOKEN,
 };
 
-// =========================
-// 3. Normalisasi hasil PaymentChecker -> {status, raw}
-// =========================
+module.exports = async (req, res) => {
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST');
+    return res.status(405).json({
+      success: false,
+      message: 'Method not allowed. Gunakan POST.',
+    });
+  }
+
+  let reference = req.query.reference || req.body.reference;
+  let amount = req.query.amount || req.body.amount;
+
+  if (!reference || !amount) {
+    return res.status(400).json({
+      success: false,
+      message: 'Reference dan Amount wajib diisi',
+    });
+  }
+
+  try {
+    // Cek apakah credentials ada
+    if (!config.auth_username || !config.auth_token) {
+      return res.status(500).json({
+        success: false,
+        message: 'ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum di-set di ENV',
+      });
+    }
+
+    // Inisialisasi PaymentChecker
+    const checker = new PaymentChecker({
+      auth_token: config.auth_token,
+      auth_username: config.auth_username,
+    });
+
+    // Tentukan batas waktu untuk timeout
+    const timeout = 5 * 60 * 1000; // Timeout 5 menit
+    const startTime = Date.now();
+
+    // Polling untuk status pembayaran setiap 3 detik
+    while (Date.now() - startTime < timeout) {
+      const result = await checker.checkPaymentStatus(reference, amount);
+      const norm = normalizeResult(result);
+
+      // Jika status pembayaran sudah PAID, kirimkan respons sukses
+      if (norm.status === 'PAID') {
+        return res.status(200).json({
+          success: true,
+          reference,
+          status: norm.status,
+          amount,
+          raw: norm.raw,
+        });
+      }
+
+      // Jika status belum PAID, tunggu 3 detik sebelum pengecekan lagi
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
+    // Jika timeout tercapai, kembalikan status timeout
+    return res.status(408).json({
+      success: false,
+      message: 'Pembayaran tidak terdeteksi dalam waktu 5 menit',
+    });
+  } catch (err) {
+    console.error('[pay-status] ERROR:', err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || 'Internal server error',
+    });
+  }
+};
+
+// Fungsi untuk normalisasi status
 function normalizeResult(res) {
   if (!res || typeof res !== 'object') {
     return { status: 'UNKNOWN', raw: res };
@@ -68,121 +85,11 @@ function normalizeResult(res) {
   let data = res.data || res.result || res;
   if (Array.isArray(data)) data = data[0] || {};
 
-  const statusRaw =
-    (data.status ||
-      data.payment_status ||
-      data.transaction_status ||
-      '').toString();
-
+  const statusRaw = (data.status || data.payment_status || data.transaction_status || '').toString();
   const status = statusRaw ? statusRaw.toUpperCase() : 'UNKNOWN';
 
   return {
     status,
-    raw: res
+    raw: res,
   };
 }
-
-// =========================
-// 4. Handler Vercel
-// =========================
-
-module.exports = async (req, res) => {
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    res.setHeader('Allow', 'GET, POST');
-    return res.status(405).json({
-      success: false,
-      message: 'Method not allowed'
-    });
-  }
-
-  // --- load PaymentChecker via dynamic import ---
-  let PC;
-  try {
-    PC = await getPaymentChecker();
-  } catch (e) {
-    return res.status(500).json({
-      success: false,
-      stage: 'load-payment-checker',
-      message: 'PaymentChecker tidak bisa diload dari autoft-qris',
-      detail: String(e && e.message ? e.message : e)
-    });
-  }
-
-  // --- ambil reference & amount ---
-  let reference = '';
-  let amount = 0;
-
-  try {
-    if (req.method === 'GET') {
-      reference = (req.query.reference || '').toString().trim();
-      amount = Number(req.query.amount || 0);
-    } else {
-      const body =
-        typeof req.body === 'string'
-          ? JSON.parse(req.body || '{}')
-          : (req.body || {});
-      reference = (body.reference || '').toString().trim();
-      amount = Number(body.amount || 0);
-    }
-  } catch (e) {
-    return res.status(400).json({
-      success: false,
-      stage: 'parse-body',
-      message: 'Body / query tidak valid'
-    });
-  }
-
-  if (!reference) {
-    return res.status(400).json({
-      success: false,
-      stage: 'validate',
-      message: 'reference wajib diisi'
-    });
-  }
-
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return res.status(400).json({
-      success: false,
-      stage: 'validate',
-      message: 'amount tidak valid'
-    });
-  }
-
-  if (!config.auth_username || !config.auth_token) {
-    return res.status(500).json({
-      success: false,
-      stage: 'config',
-      message:
-        'ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum di-set di environment'
-    });
-  }
-
-  // --- panggil PaymentChecker ke API AutoFT / OrderKuota ---
-  try {
-    const checker = new PC({
-      auth_token: config.auth_token,
-      auth_username: config.auth_username
-    });
-
-    const rawResult = await checker.checkPaymentStatus(reference, amount);
-    const norm = normalizeResult(rawResult);
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        reference,
-        amount,
-        status: norm.status
-      },
-      raw: norm.raw
-    });
-  } catch (err) {
-    console.error('pay-status runtime error:', err);
-    return res.status(500).json({
-      success: false,
-      stage: 'check-payment',
-      message: err.message || 'Internal server error',
-      stack: err.stack
-    });
-  }
-};
