@@ -1,62 +1,26 @@
 // api/pay-status.js
 
-// ---------- util ----------
+// Ganti import menjadi require
+const { PaymentChecker } = require('autoft-qris'); // Pastikan menggunakan `require()`
 const _norm = (m) => (m && (m.default || m)) || m;
 
 function ok(res, body) {
   res.setHeader('Cache-Control', 'no-store');
   return res.status(200).json(body);
 }
+
 function fail(res, code, stage, message, extra = {}) {
   res.setHeader('Cache-Control', 'no-store');
   return res.status(code).json({ success: false, stage, message, ...extra });
 }
 
-// ---------- 1) Loader PaymentChecker: ESM & CJS ----------
-let PCPromise = null;
-let lastLoadErr = null;
-
-async function getPaymentChecker() {
-  if (PCPromise) return PCPromise;
-  PCPromise = (async () => {
-    try {
-      // ESM path (src)
-      try {
-        const m1 = await import('autoft-qris/src/payment-checker.mjs');
-        const C1 = _norm(m1.PaymentChecker || m1);
-        if (C1) return C1;
-      } catch (e1) { lastLoadErr = e1; }
-
-      // ESM path (root)
-      try {
-        const m2 = await import('autoft-qris/payment-checker.mjs');
-        const C2 = _norm(m2.PaymentChecker || m2);
-        if (C2) return C2;
-      } catch (e2) { lastLoadErr = e2; }
-
-      // CJS fallback
-      try {
-        const c = require('autoft-qris');
-        const C3 = c.PaymentChecker || require('autoft-qris/src/payment-checker.cjs');
-        if (C3) return C3;
-      } catch (e3) { lastLoadErr = e3; }
-
-      throw lastLoadErr || new Error('PaymentChecker tidak ditemukan');
-    } catch (e) {
-      lastLoadErr = e;
-      throw e;
-    }
-  })();
-  return PCPromise;
-}
-
-// ---------- 2) ENV config ----------
+// ---------- 1) ENV config ----------
 const CONFIG = {
   auth_username: process.env.ORKUT_AUTH_USERNAME,
   auth_token: process.env.ORKUT_AUTH_TOKEN,
 };
 
-// ---------- 3) Normalizer super-aman ----------
+// ---------- 2) Normalizer super-aman ----------
 function normalizeResult(res) {
   // jika res bukan object, langsung UNKNOWN
   if (!res || typeof res !== 'object') {
@@ -85,7 +49,7 @@ function normalizeResult(res) {
   return { status, amount, ref, paidAt, raw: res };
 }
 
-// ---------- 4) Handler Vercel ----------
+// ---------- 3) Handler Vercel ----------
 module.exports = async (req, res) => {
   try {
     if (req.method !== 'GET' && req.method !== 'POST') {
