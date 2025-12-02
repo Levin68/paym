@@ -7,11 +7,8 @@
     "dev": "vercel dev",
     "start": "node server.js"
   },
-  "engines": {
-    "node": "20.x"
-  },
-  "type": "commonjs",
   "dependencies": {
-    "autoft-qris": "^0.0.9"
+    "node-fetch": "^2.6.1",
+    "autoft-qris": "^0.0.9" 
   }
 }
