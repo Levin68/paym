@@ -1,5 +1,3 @@
-// js/script.js
-
 // Ambil elemen DOM
 const amountInput = document.getElementById("amount");
 const btnGenerate = document.getElementById("btn-generate");
