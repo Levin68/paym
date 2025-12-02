@@ -1,10 +1,6 @@
 module.exports = async (req, res) => {
-  console.log("Received request for /pay-status");
-
   let reference = req.query.reference || req.body.reference;
   let amount = req.query.amount || req.body.amount;
-
-  console.log("Parameters received:", { reference, amount });
 
   if (!reference || !amount) {
     return res.status(400).json({
@@ -14,23 +10,34 @@ module.exports = async (req, res) => {
   }
 
   try {
+    // Cek apakah PaymentChecker berhasil diinisialisasi
     console.log("Initializing PaymentChecker...");
     const checker = new PaymentChecker({
       auth_token: process.env.ORKUT_AUTH_TOKEN,
       auth_username: process.env.ORKUT_AUTH_USERNAME
     });
 
-    console.log("PaymentChecker initialized.");
-
     const timeout = 5 * 60 * 1000;
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
+      // Panggil checkPaymentStatus
       const result = await checker.checkPaymentStatus(reference, amount);
+      console.log("Result from PaymentChecker:", result);
+
+      // Cek jika result tidak undefined dan memiliki data yang benar
+      if (!result || typeof result !== 'object') {
+        console.error("Invalid response from PaymentChecker:", result);
+        return res.status(500).json({
+          success: false,
+          message: 'Invalid response from PaymentChecker',
+        });
+      }
+
+      // Normalisasi hasil jika data ada
       const norm = normalizeResult(result);
 
-      if (norm.status === 'PAID') {
-        console.log("Payment detected as PAID.");
+      if (norm && norm.status === 'PAID') {
         return res.status(200).json({
           success: true,
           reference,
@@ -56,3 +63,21 @@ module.exports = async (req, res) => {
     });
   }
 };
+
+// Normalisasi result untuk memastikan data selalu ada
+function normalizeResult(res) {
+  if (!res || typeof res !== 'object') {
+    return { status: 'UNKNOWN', raw: res };
+  }
+
+  let data = res.data || res.result || res;
+  if (Array.isArray(data)) data = data[0] || {};
+
+  const statusRaw = (data.status || data.payment_status || data.transaction_status || '').toString();
+  const status = statusRaw ? statusRaw.toUpperCase() : 'UNKNOWN';
+
+  return {
+    status,
+    raw: res,
+  };
+}
