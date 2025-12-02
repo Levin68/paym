@@ -52,6 +52,8 @@ function normalizeResult(res) {
 // ---------- 3) Handler Vercel ----------
 module.exports = async (req, res) => {
   try {
+    console.log("Start request processing...");
+    
     if (req.method !== 'GET' && req.method !== 'POST') {
       res.setHeader('Allow', 'GET, POST');
       return fail(res, 405, 'method', 'Gunakan GET/POST');
@@ -69,7 +71,9 @@ module.exports = async (req, res) => {
         reference = String(body.reference ?? '').trim();
         amount = Number(body.amount ?? 0);
       }
-    } catch {
+      console.log(`Parsed input - Reference: ${reference}, Amount: ${amount}`);
+    } catch (e) {
+      console.error("Error parsing body or query:", e);
       return fail(res, 400, 'parse', 'Body / query tidak valid');
     }
 
@@ -77,6 +81,7 @@ module.exports = async (req, res) => {
     if (!Number.isFinite(amount) || amount <= 0) return fail(res, 400, 'validate', 'amount tidak valid');
 
     if (!CONFIG.auth_username || !CONFIG.auth_token) {
+      console.error("Missing configuration credentials.");
       return fail(res, 500, 'config', 'ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum di-set di ENV');
     }
 
