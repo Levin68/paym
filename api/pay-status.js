@@ -1,159 +1,82 @@
-// api/pay-status.js
+let paymentCheckerPromise = null;
 
-const _norm = (m) => (m && (m.default || m)) || m;
+async function getPaymentChecker() {
+  if (paymentCheckerPromise) return paymentCheckerPromise;
 
-// ===== 1. ENV CONFIG =====
-const CONFIG = {
-  auth_username: process.env.ORKUT_AUTH_USERNAME,
-  auth_token: process.env.ORKUT_AUTH_TOKEN
-};
-
-// ===== 2. LOAD PAYMENTCHECKER (CJS ONLY) =====
-let PaymentChecker = null;
-let loaderError = null;
-
-try {
-  const mod = require('autoft-qris/src/payment-checker.cjs');
-  PaymentChecker = _norm(mod.PaymentChecker || mod);
-  if (!PaymentChecker) {
-    loaderError = new Error('PaymentChecker class tidak ditemukan di CJS');
-  }
-} catch (e) {
-  loaderError = e;
-}
-
-// ===== 3. NORMALIZER STATUS =====
-function normalizeStatus(raw) {
-  if (!raw || typeof raw !== 'object') {
-    return 'UNKNOWN';
-  }
-
-  let data = raw.data ?? raw.result ?? raw;
-  if (Array.isArray(data)) data = data[0] ?? {};
-  if (!data || typeof data !== 'object') data = {};
-
-  const statusRaw =
-    data.status ||
-    data.payment_status ||
-    data.transaction_status;
-
-  if (!statusRaw) return 'UNKNOWN';
-  return String(statusRaw).toUpperCase();
-}
-
-// ===== 4. UNIFIED RESPONSE =====
-function respond(res, code, { success, reference, amount, status, raw }) {
-  res.setHeader('Cache-Control', 'no-store');
-  return res.status(code).json({
-    success: Boolean(success),
-    reference: reference || '',
-    amount: Number(amount || 0),
-    status: status || 'UNKNOWN',
-    raw: raw ?? null
-  });
-}
-
-// ===== 5. HANDLER =====
-module.exports = async (req, res) => {
-  // cuma allow GET & POST
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    res.setHeader('Allow', 'GET, POST');
-    return respond(res, 405, {
-      success: false,
-      reference: '',
-      amount: 0,
-      status: 'UNKNOWN',
-      raw: { success: false, error: 'Method not allowed' }
-    });
-  }
-
-  // --- parse input ---
-  let reference = '';
-  let amount = 0;
-
-  try {
-    if (req.method === 'GET') {
-      reference = String(req.query.reference || '').trim();
-      amount = Number(req.query.amount || 0);
-    } else {
-      const body =
-        typeof req.body === 'string'
-          ? JSON.parse(req.body || '{}')
-          : (req.body || {});
-      reference = String(body.reference || '').trim();
-      amount = Number(body.amount || 0);
-    }
-  } catch (e) {
-    return respond(res, 400, {
-      success: false,
-      reference,
-      amount,
-      status: 'UNKNOWN',
-      raw: { success: false, error: 'Body / query tidak valid', detail: String(e.message || e) }
-    });
-  }
-
-  if (!reference || !Number.isFinite(amount) || amount <= 0) {
-    return respond(res, 400, {
-      success: false,
-      reference,
-      amount,
-      status: 'UNKNOWN',
-      raw: { success: false, error: 'reference/amount tidak valid' }
-    });
-  }
-
-  if (!CONFIG.auth_username || !CONFIG.auth_token) {
-    return respond(res, 500, {
-      success: false,
-      reference,
-      amount,
-      status: 'UNKNOWN',
-      raw: { success: false, error: 'ENV ORKUT_AUTH_USERNAME / ORKUT_AUTH_TOKEN belum di-set' }
-    });
-  }
-
-  if (!PaymentChecker || loaderError) {
-    return respond(res, 500, {
-      success: false,
-      reference,
-      amount,
-      status: 'UNKNOWN',
-      raw: {
-        success: false,
-        error: 'PaymentChecker tidak bisa diload dari autoft-qris',
-        detail: String(loaderError && loaderError.message ? loaderError.message : loaderError)
+  paymentCheckerPromise = (async () => {
+    try {
+      // Load modul autoft-qris dan pastikan PaymentChecker berhasil di-load
+      try {
+        console.log("Trying to load autoft-qris/src/payment-checker.mjs...");
+        const m1 = await import('autoft-qris/src/payment-checker.mjs');
+        const C1 = m1.PaymentChecker || m1.default || m1;
+        console.log("Loaded autoft-qris/src/payment-checker.mjs:", C1);
+        if (C1) return C1;
+      } catch (e1) {
+        console.error("Error loading autoft-qris/src/payment-checker.mjs:", e1);
+        throw new Error('Error loading payment checker module');
       }
-    });
-  }
 
-  // --- call PaymentChecker ---
-  let raw;
-  try {
-    const checker = new PaymentChecker({
-      auth_username: CONFIG.auth_username,
-      auth_token: CONFIG.auth_token
-    });
+      // Fallback check (if needed)
+      throw new Error('PaymentChecker tidak ditemukan');
+    } catch (e) {
+      console.error("Error loading payment checker:", e);
+      throw e;
+    }
+  })();
 
-    raw = await checker.checkPaymentStatus(reference, amount);
-  } catch (e) {
-    // kalau HTTP error / network error dsb → bungkus jadi raw error
-    raw = {
+  return paymentCheckerPromise;
+}
+
+module.exports = async (req, res) => {
+  if (req.method !== 'POST') {
+    return res.status(405).json({
       success: false,
-      error: 'Gagal cek status pembayaran: ' + String(e && e.message ? e.message : e)
-    };
+      message: 'Method not allowed. Gunakan POST.',
+    });
   }
 
-  const status = normalizeStatus(raw);
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const { reference, amount } = body;
 
-  // SESUAI PERMINTAAN:
-  // struktur SELALU:
-  // { success: true/false, reference, amount, status, raw }
-  return respond(res, 200, {
-    success: true, // top-level tetap true, walau raw.success bisa false
-    reference,
-    amount,
-    status,
-    raw
-  });
+    if (!reference || !amount || typeof reference !== 'string' || isNaN(amount)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parameter reference atau amount tidak valid.',
+      });
+    }
+
+    const paymentChecker = await getPaymentChecker();
+    const status = await paymentChecker.check(reference); // Misalnya, cek status menggunakan reference
+
+    // Menentukan status berdasarkan hasil pengecekan
+    let resultStatus = 'UNKNOWN';
+    let errorDetail = '';
+
+    if (status.success) {
+      resultStatus = 'SUCCESS';
+    } else {
+      resultStatus = 'FAILED';
+      errorDetail = status.error || 'Unknown error';
+    }
+
+    return res.status(200).json({
+      success: true,
+      reference,
+      amount,
+      status: resultStatus,
+      raw: {
+        success: status.success,
+        error: errorDetail,
+      },
+    });
+  } catch (error) {
+    console.error('Error handling payment status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Gagal memproses status pembayaran',
+      error: error.message,
+    });
+  }
 };
