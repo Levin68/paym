@@ -16,6 +16,9 @@
         --fg-soft: #9ca3af;
         --accent: #22c55e;
         --accent-blue: #38bdf8;
+        --button-hover: #4ade80;
+        --input-focus: #38bdf8;
+        --shadow: rgba(15, 23, 42, 0.9);
       }
       * {
         box-sizing: border-box;
@@ -51,6 +54,12 @@
         padding: 22px 20px;
         border: 1px solid rgba(148, 163, 184, 0.3);
         box-shadow: 0 22px 60px rgba(15, 23, 42, 0.9);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+      .card:hover,
+      .qr-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 30px 80px rgba(15, 23, 42, 0.8);
       }
       .header-row {
         display: flex;
@@ -61,15 +70,16 @@
       }
       h1 {
         margin: 0;
-        font-size: 1.2rem;
-        font-weight: 600;
+        font-size: 1.4rem;
+        font-weight: 700;
         display: flex;
         align-items: center;
         gap: 8px;
+        color: #bbf7d0;
       }
       .logo-pill {
-        width: 26px;
-        height: 26px;
+        width: 30px;
+        height: 30px;
         border-radius: 999px;
         display: inline-flex;
         align-items: center;
@@ -79,8 +89,8 @@
         font-size: 16px;
       }
       .env-pill {
-        font-size: 0.72rem;
-        padding: 4px 9px;
+        font-size: 0.8rem;
+        padding: 6px 10px;
         border-radius: 999px;
         border: 1px solid rgba(148, 163, 184, 0.4);
         color: var(--fg-soft);
@@ -89,15 +99,15 @@
         gap: 6px;
       }
       .env-dot {
-        width: 7px;
-        height: 7px;
+        width: 8px;
+        height: 8px;
         border-radius: 999px;
         background: #22c55e;
         box-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
       }
       .sub {
         color: var(--fg-soft);
-        font-size: 0.83rem;
+        font-size: 0.9rem;
         margin-bottom: 16px;
       }
       .section-title {
@@ -108,7 +118,7 @@
         margin-bottom: 6px;
       }
       label {
-        font-size: 0.86rem;
+        font-size: 0.9rem;
         display: block;
         margin-bottom: 4px;
       }
@@ -117,17 +127,18 @@
       }
       input {
         width: 100%;
-        padding: 9px 11px;
+        padding: 12px 14px;
         border-radius: 10px;
         border: 1px solid rgba(148, 163, 184, 0.5);
         background: rgba(15, 23, 42, 0.9);
         color: var(--fg);
         outline: none;
-        font-size: 0.9rem;
+        font-size: 1rem;
+        transition: border 0.3s, box-shadow 0.3s;
       }
       input:focus {
-        border-color: var(--accent-blue);
-        box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.5);
+        border-color: var(--input-focus);
+        box-shadow: 0 0 5px 2px var(--input-focus);
       }
       .tiny-hint {
         font-size: 0.75rem;
@@ -137,21 +148,20 @@
       button {
         margin-top: 14px;
         width: 100%;
-        padding: 11px 14px;
+        padding: 12px 16px;
         border-radius: 999px;
         border: none;
         background: linear-gradient(135deg, #22c55e, #16a34a);
         color: #ecfdf5;
         font-weight: 600;
-        font-size: 0.9rem;
+        font-size: 1rem;
         cursor: pointer;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
         box-shadow: 0 18px 32px rgba(21, 128, 61, 0.5);
-        transition: transform 0.08s ease, box-shadow 0.08s ease,
-          filter 0.08s ease;
+        transition: transform 0.3s, box-shadow 0.3s, filter 0.3s;
       }
       button:hover:not(:disabled) {
         transform: translateY(-1px);
@@ -164,8 +174,8 @@
         box-shadow: none;
       }
       button svg {
-        width: 16px;
-        height: 16px;
+        width: 18px;
+        height: 18px;
       }
       .footer {
         margin-top: 18px;
@@ -314,7 +324,6 @@
   </head>
   <body>
     <div class="shell">
-      <!-- FORM KIRI -->
       <div class="card">
         <div class="card-inner">
           <div class="header-row">
@@ -375,7 +384,6 @@
         </div>
       </div>
 
-      <!-- QR + STATUS KANAN -->
       <div class="qr-card">
         <div class="qr-card-inner">
           <div class="qr-header-row">
