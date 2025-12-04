@@ -26,16 +26,19 @@ export default async function handler(req, res) {
       });
 
       const createRes = await createResRaw.json();
-      const payment = createRes.payment || createRes;
 
-      if (!payment || !payment.payment_number) {
+      // Menampilkan respon dari API untuk debugging
+      console.log('Response dari API:', createRes);
+
+      if (!createRes.payment && !createRes.code) {
         return res.status(500).json({ error: 'Gagal membuat transaksi QRIS.' });
       }
 
-      const payCode = payment.code || createRes.code || '';
+      const payCode = createRes.payment ? createRes.payment.code : createRes.code;
       const qrUrl = `https://app.pakasir.com/qris/${payCode}.png`;
       res.status(200).json({ qrUrl, order_id, amount });
     } catch (error) {
+      console.error('Error saat membuat transaksi QRIS:', error);
       res.status(500).json({ error: 'Terjadi kesalahan saat memproses pembayaran.' });
     }
   } else {
