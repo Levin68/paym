@@ -8,7 +8,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Nominal tidak valid. Minimal 1000.' });
       }
 
-      // Ganti dengan Slug dan API Key yang kamu miliki
+      // Slug dan API Key yang kamu miliki
       const project = "levin";  // Slug proyek
       const api_key = "3RkaqC3a01fi45h3PPWxbRKkAH9JkcaC";  // API Key proyek
 
@@ -17,6 +17,14 @@ export default async function handler(req, res) {
       const tanggal = now.toISOString().split("T")[0];  // Format YYYY-MM-DD
       const uniq = Date.now();
       const order_id = `${tanggal}-${uniq}`;
+
+      // Debugging log: Pastikan data yang dikirim benar
+      console.log("Membuat transaksi dengan data berikut:", {
+        project,
+        api_key,
+        order_id,
+        amount
+      });
 
       // Request ke API Pakasir untuk membuat transaksi
       const createResRaw = await fetch("https://app.pakasir.com/api/transactioncreate/qris", {
@@ -27,15 +35,17 @@ export default async function handler(req, res) {
 
       const createRes = await createResRaw.json();
 
-      // Menampilkan respon dari API untuk debugging
-      console.log('Response dari API:', createRes);
+      // Debugging log: Tampilkan response dari API Pakasir
+      console.log("Response dari API Pakasir:", createRes);
 
+      // Memeriksa jika response tidak sesuai
       if (!createRes.payment && !createRes.code) {
         return res.status(500).json({ error: 'Gagal membuat transaksi QRIS.' });
       }
 
       const payCode = createRes.payment ? createRes.payment.code : createRes.code;
       const qrUrl = `https://app.pakasir.com/qris/${payCode}.png`;
+
       res.status(200).json({ qrUrl, order_id, amount });
     } catch (error) {
       console.error('Error saat membuat transaksi QRIS:', error);
