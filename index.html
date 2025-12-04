@@ -5,58 +5,86 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pembayaran QRIS - Pakasir</title>
   <style>
+    /* Reset default styles */
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
+
     body {
       font-family: 'Arial', sans-serif;
+      height: 100vh;
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
-      background-color: #f1f1f1;
+      background: linear-gradient(135deg, #4caf50, #45a049);
       overflow: hidden;
     }
-    .container {
-      background-color: white;
-      padding: 30px 40px;
-      border-radius: 15px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-      transition: transform 0.3s ease-in-out, box-shadow 0.3s ease;
-      text-align: center;
-      animation: fadeIn 1s ease-in-out;
+
+    .background {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: url('https://www.transparenttextures.com/patterns/black-tie.png');
+      z-index: -1;
     }
+
+    .container {
+      background-color: #fff;
+      padding: 40px 50px;
+      border-radius: 15px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      max-width: 500px;
+      width: 100%;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      animation: fadeIn 1s ease-out;
+    }
+
     .container:hover {
       transform: translateY(-10px);
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
     }
+
     h1 {
-      font-size: 2rem;
-      margin-bottom: 20px;
+      font-size: 2.5rem;
+      margin-bottom: 15px;
       color: #333;
+      font-weight: bold;
     }
+
+    .subheading {
+      font-size: 1.1rem;
+      color: #777;
+      margin-bottom: 30px;
+    }
+
     form {
       margin-bottom: 20px;
     }
+
     input {
       width: 100%;
-      padding: 12px 15px;
-      margin: 10px 0;
-      font-size: 1rem;
-      border: 1px solid #ddd;
+      padding: 14px 18px;
+      margin: 12px 0;
+      font-size: 1.2rem;
+      border: 2px solid #ddd;
       border-radius: 8px;
       outline: none;
-      transition: all 0.3s;
+      transition: border-color 0.3s, box-shadow 0.3s;
     }
+
     input:focus {
       border-color: #4caf50;
-      box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+      box-shadow: 0 0 10px rgba(76, 175, 80, 0.3);
     }
+
     button {
-      padding: 12px 30px;
-      font-size: 1.1rem;
+      padding: 14px 30px;
+      font-size: 1.2rem;
       background-color: #4caf50;
       color: white;
       border: none;
@@ -64,36 +92,42 @@
       cursor: pointer;
       transition: background-color 0.3s;
     }
+
     button:hover {
       background-color: #45a049;
     }
+
     #qr-container {
       margin-top: 30px;
       display: none;
       transition: opacity 0.5s ease-in-out;
     }
+
     img {
-      width: 250px;
-      height: 250px;
+      width: 260px;
+      height: 260px;
       border: 5px solid #ddd;
       border-radius: 10px;
       box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
       transition: transform 0.3s;
     }
+
     img:hover {
       transform: scale(1.1);
     }
+
     p {
       font-size: 1rem;
       color: #555;
       margin-top: 15px;
     }
+
     @keyframes fadeIn {
-      from {
+      0% {
         opacity: 0;
         transform: scale(0.9);
       }
-      to {
+      100% {
         opacity: 1;
         transform: scale(1);
       }
@@ -101,93 +135,24 @@
   </style>
 </head>
 <body>
+  <div class="background"></div>
   <div class="container">
     <h1>Bayar dengan QRIS</h1>
+    <p class="subheading">Transaksi aman dan mudah, langsung lakukan pembayaran dengan QRIS.</p>
+
     <form id="payment-form">
       <label for="amount">Nominal Pembayaran (min 1000):</label>
       <input type="number" id="amount" name="amount" placeholder="Masukkan jumlah pembayaran" required>
       <button type="submit">Bayar Sekarang</button>
     </form>
+
     <div id="qr-container">
       <h3>Scan QRIS untuk Pembayaran:</h3>
       <img id="qr-code" src="" alt="QR Code">
       <p id="order-id"></p>
     </div>
   </div>
-  <script>
-    document.getElementById('payment-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const amount = document.getElementById('amount').value;
-      const response = await fetch('/api/createqr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount })
-      });
-      const result = await response.json();
-      if (result.qrUrl) {
-        document.getElementById('qr-code').src = result.qrUrl;
-        document.getElementById('order-id').innerText = `Order ID: ${result.order_id}`;
-        document.getElementById('qr-container').style.display = 'block';
-      } else {
-        alert('Gagal membuat QRIS, coba lagi.');
-      }
-    });
-  </script>
+  
+  <script src="js/script.js"></script>
 </body>
-</html>
-            <span>Generate QRIS</span>
-          </button>
-
-          <div class="footer">
-            <span>
-              Frontend polling ±3 detik ke
-              <code>GET /api/pay-status</code>.
-            </span>
-            <span>Ref & status real-time tampil di panel kanan.</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="qr-card">
-        <div class="qr-card-inner">
-          <div class="qr-header-row">
-            <div class="qr-title">
-              <span>QRIS Active Session</span>
-              <span class="qr-title-pill">Realtime</span>
-            </div>
-          </div>
-
-          <div class="qr-wrapper" id="qr-section" style="display: none">
-            <img id="qr-img" alt="QRIS" />
-          </div>
-
-          <div class="qr-wrapper" id="qr-placeholder">
-            <div class="qr-placeholder">
-              Belum ada QR. Isi nominal di kiri & klik
-              <strong>Generate QRIS</strong>.
-            </div>
-          </div>
-
-          <div class="info">
-            <div class="info-row">
-              <span>Ref</span>
-              <span class="info-value"><code id="ref-text">—</code></span>
-            </div>
-            <div class="info-row">
-              <span>Nominal</span>
-              <span class="info-value amount-highlight"
-                ><span id="amount-text">—</span></span
-              >
-            </div>
-          </div>
-
-          <div class="status" id="status-box">
-            <!-- diisi js/script.js -->
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <script src="js/script.js"></script>
-  </body>
 </html>
