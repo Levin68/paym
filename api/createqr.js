@@ -1,92 +1,54 @@
 import axios from 'axios';
 
-// Konfigurasi Zenitsu API
 const ZENITSU_CONFIG = {
-  username: 'vinzyy',  // Username
-  token: '1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh'  // Token
+  username: 'vinzyy',
+  token: '1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh',
 };
 
-// Penyimpanan data transaksi sementara
-let currentTransaction = null;
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ success: false, error: 'Method Not Allowed' });
+  }
 
-/**
- * Generate QR Code using Zenitsu API
- */
-async function generateQRCode(amount) {
+  const { amount } = req.body;
+
+  const numericAmount = Number(amount);
+  if (!amount || Number.isNaN(numericAmount) || numericAmount <= 0) {
+    return res.status(400).json({ success: false, error: 'Invalid amount' });
+  }
+
   try {
     const response = await axios.post(
       'https://api.zenitsu.web.id/api/orkut/createqr',
       {
         username: ZENITSU_CONFIG.username,
         token: ZENITSU_CONFIG.token,
-        amount: amount.toString()
+        amount: numericAmount.toString(),
       },
       {
         headers: { 'Content-Type': 'application/json' },
-        timeout: 10000
+        timeout: 10000,
       }
     );
 
-    if (response.data && response.data.statusCode === 200 && response.data.results) {
-      currentTransaction = {
-        idtrx: response.data.results.idtrx,
-        amount: response.data.results.amount,
-        createAt: response.data.results.createAt,
-        username: ZENITSU_CONFIG.username,
-        token: ZENITSU_CONFIG.token,
-        expired: new Date(response.data.results.expired),
-        qrUrl: response.data.results.url
-      };
-
-      return {
-        success: true,
-        data: currentTransaction
-      };
-    } else {
-      return { success: false, error: 'Failed to generate QR code' };
-    }
-  } catch (error) {
-    console.error('❌ Error generating QR code:', error.message);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * API handler untuk generate QR
- */
-export default async function handler(req, res) {
-  if (req.method === 'POST') {
-    const { amount } = req.body;
-
-    if (!amount || isNaN(amount) || amount <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid amount'
-      });
+    if (!response.data || response.data.statusCode !== 200 || !response.data.results) {
+      return res.status(500).json({ success: false, error: 'Failed to generate QR' });
     }
 
-    const qrResult = await generateQRCode(amount);
+    const r = response.data.results;
 
-    if (!qrResult.success) {
-      return res.status(500).json({
-        success: false,
-        error: qrResult.error
-      });
-    }
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: {
-        idTransaksi: qrResult.data.idtrx,
-        amount: qrResult.data.amount,
-        expired: qrResult.data.expired,
-        qrUrl: qrResult.data.qrUrl
-      }
+        idTransaksi: r.idtrx,
+        amount: Number(r.amount),
+        createdAt: r.createAt,
+        expired: r.expired,
+        qrUrl: r.url,
+      },
     });
-  } else {
-    res.status(405).json({
-      success: false,
-      error: 'Method Not Allowed'
-    });
+  } catch (err) {
+    console.error('Error createqr:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
   }
 }
