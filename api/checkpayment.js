@@ -1,28 +1,21 @@
 import axios from 'axios';
 
-// Penyimpanan data transaksi sementara di memory
-let currentTransaction = null;
+// Konfigurasi Zenitsu API
+const ZENITSU_CONFIG = {
+  username: 'vinzyy',  // Username
+  token: '1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh'  // Token
+};
 
 /**
- * Cek status pembayaran menggunakan API Zenitsu
+ * Fungsi untuk mengecek status pembayaran menggunakan mutasi
  */
-async function checkPaymentStatus() {
-  if (!currentTransaction) {
-    return {
-      success: false,
-      error: 'No transaction data available'
-    };
-  }
-
+async function checkPaymentStatusFromMutasi(idTransaksi, amount) {
   try {
     const response = await axios.post(
-      'https://api.zenitsu.web.id/api/orkut/checkpayment',
+      'https://api.zenitsu.web.id/api/orkut/mutasi',  // Endpoint mutasi
       {
-        username: currentTransaction.username,
-        token: currentTransaction.token,
-        idtrx: currentTransaction.idtrx,
-        amount: currentTransaction.amount.toString(),
-        createdAt: currentTransaction.createAt
+        username: ZENITSU_CONFIG.username,
+        token: ZENITSU_CONFIG.token
       },
       {
         headers: { 'Content-Type': 'application/json' },
@@ -31,52 +24,76 @@ async function checkPaymentStatus() {
     );
 
     if (response.data && response.data.statusCode === 200 && response.data.results) {
-      const status = response.data.results.status;
+      const mutasi = response.data.results;
 
-      if (status === 'PAID') {
-        return {
-          success: true,
-          paymentStatus: 'Payment successful',
-          data: response.data.results
-        };
+      const now = new Date();
+      const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000); // 5 menit terakhir
+
+      const payment = mutasi.find(transaction => {
+        try {
+          const [datePart, timePart] = transaction.tanggal.split(' ');
+          const [day, month, year] = datePart.split('/');
+          const transactionDate = new Date(`${year}-${month}-${day}T${timePart}:00`);
+
+          const isRecent = transactionDate >= fiveMinutesAgo;
+          const isIncoming = transaction.status === 'IN';
+
+          const transactionAmount = parseInt(transaction.kredit.replace(/./g, '')); // Parsing amount
+          const amountMatch = transactionAmount === amount;
+
+          // Mencocokkan transaksi berdasarkan ID, waktu, dan jumlah
+          return isRecent && isIncoming && amountMatch;
+        } catch (e) {
+          console.log('❌ Error parsing transaction:', e);
+          return false;
+        }
+      });
+
+      if (payment) {
+        return { status: 'paid', data: payment };
       } else {
-        return {
-          success: true,
-          paymentStatus: 'Waiting for payment'
-        };
+        return { status: 'pending' };
       }
-    } else {
-      return {
-        success: false,
-        error: 'Failed to check payment status'
-      };
     }
+
+    return { status: 'error', message: 'Failed to fetch mutation data' };
   } catch (error) {
-    console.error('❌ Error checking payment status:', error.message);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error('❌ Error checking payment status from mutasi:', error.message);
+    return { status: 'error', message: error.message };
   }
 }
 
 /**
- * API handler untuk pengecekan pembayaran
+ * API handler untuk pengecekan pembayaran dari mutasi
  */
 export default async function handler(req, res) {
   if (req.method === 'POST') {
-    const paymentStatus = await checkPaymentStatus();
+    const { idTransaksi, amount } = req.body;
 
-    if (paymentStatus.success) {
+    if (!idTransaksi || !amount || isNaN(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid transaction data'
+      });
+    }
+
+    const paymentStatus = await checkPaymentStatusFromMutasi(idTransaksi, amount);
+
+    if (paymentStatus.status === 'paid') {
       res.status(200).json({
         success: true,
-        paymentStatus: paymentStatus.paymentStatus,
-        data: paymentStatus.data || {}
+        paymentStatus: 'Payment successful',
+        data: paymentStatus.data
+      });
+    } else if (paymentStatus.status === 'pending') {
+      res.status(200).json({
+        success: true,
+        paymentStatus: 'Waiting for payment'
       });
     } else {
       res.status(500).json({
         success: false,
-        error: paymentStatus.error
+        error: paymentStatus.message || 'Error checking payment status'
       });
     }
   } else {
