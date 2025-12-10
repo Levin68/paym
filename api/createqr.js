@@ -1,13 +1,13 @@
 import axios from 'axios';
 
-// Konfigurasi Zenitsu API dengan username dan token yang diberikan
+// Konfigurasi Zenitsu API
 const ZENITSU_CONFIG = {
   username: 'vinzyy',  // Username
   token: '1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh'  // Token
 };
 
-// Global variable untuk menyimpan data transaksi
-let currentTransaction = null;  // Menyimpan transaksi yang sedang berjalan
+// Penyimpanan data transaksi sementara di cache (sederhana)
+let currentTransaction = null;  // Untuk prototype, simpan di memory
 
 /**
  * Generate QR Code using Zenitsu API
