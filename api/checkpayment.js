@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// Global variable untuk menyimpan data transaksi yang dibuat sebelumnya
-let currentTransaction = null;  // Data transaksi akan diambil dari /api/createqr
+// Penyimpanan data transaksi sementara di memory
+let currentTransaction = null;
 
 /**
  * Cek status pembayaran menggunakan API Zenitsu
