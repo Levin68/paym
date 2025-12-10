@@ -1,14 +1,17 @@
 import axios from 'axios';
 
-// Ambil data transaksi yang sudah disimpan sebelumnya
-let currentTransaction = null;  // Harus sudah diisi sebelumnya di generateQRCode()
+// Global variable untuk menyimpan data transaksi yang dibuat sebelumnya
+let currentTransaction = null;  // Data transaksi akan diambil dari /api/createqr
 
 /**
  * Cek status pembayaran menggunakan API Zenitsu
  */
 async function checkPaymentStatus() {
   if (!currentTransaction) {
-    return { status: 'error', message: 'No transaction data available' };
+    return {
+      success: false,
+      error: 'No transaction data available'
+    };
   }
 
   try {
@@ -22,26 +25,38 @@ async function checkPaymentStatus() {
         createdAt: currentTransaction.createAt
       },
       {
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         timeout: 10000
       }
     );
 
     if (response.data && response.data.statusCode === 200 && response.data.results) {
       const status = response.data.results.status;
+
       if (status === 'PAID') {
-        return { status: 'paid', data: response.data.results };
+        return {
+          success: true,
+          paymentStatus: 'Payment successful',
+          data: response.data.results
+        };
       } else {
-        return { status: 'pending' };
+        return {
+          success: true,
+          paymentStatus: 'Waiting for payment'
+        };
       }
     } else {
-      return { status: 'error', message: 'Failed to check payment status' };
+      return {
+        success: false,
+        error: 'Failed to check payment status'
+      };
     }
   } catch (error) {
     console.error('❌ Error checking payment status:', error.message);
-    return { status: 'error', message: error.message };
+    return {
+      success: false,
+      error: error.message
+    };
   }
 }
 
@@ -52,24 +67,22 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const paymentStatus = await checkPaymentStatus();
 
-    if (paymentStatus.status === 'paid') {
-      return res.status(200).json({
+    if (paymentStatus.success) {
+      res.status(200).json({
         success: true,
-        paymentStatus: 'Payment successful',
-        data: paymentStatus.data
-      });
-    } else if (paymentStatus.status === 'pending') {
-      return res.status(200).json({
-        success: true,
-        paymentStatus: 'Waiting for payment'
+        paymentStatus: paymentStatus.paymentStatus,
+        data: paymentStatus.data || {}
       });
     } else {
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
-        error: paymentStatus.message
+        error: paymentStatus.error
       });
     }
   } else {
-    res.status(405).json({ error: 'Method Not Allowed' });
+    res.status(405).json({
+      success: false,
+      error: 'Method Not Allowed'
+    });
   }
 }
