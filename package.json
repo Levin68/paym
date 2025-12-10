@@ -1,14 +1,18 @@
 {
-  "name": "paym",
+  "name": "qr-code-generator",
   "version": "1.0.0",
+  "description": "QR Code generator for Zenitsu payment gateway",
+  "main": "index.js",
   "scripts": {
     "dev": "vercel dev",
-    "start": "vercel --prod"
+    "deploy": "vercel --prod"
   },
   "dependencies": {
-    "node-fetch": "^2.6.1"
+    "axios": "^0.21.1"
   },
   "engines": {
     "node": "20.x"
-  }
+  },
+  "author": "Your Name",
+  "license": "MIT"
 }
