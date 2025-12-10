@@ -6,8 +6,8 @@ const ZENITSU_CONFIG = {
   token: '1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh'  // Token
 };
 
-// Penyimpanan data transaksi sementara di cache (sederhana)
-let currentTransaction = null;  // Untuk prototype, simpan di memory
+// Penyimpanan data transaksi sementara
+let currentTransaction = null;
 
 /**
  * Generate QR Code using Zenitsu API
@@ -28,7 +28,6 @@ async function generateQRCode(amount) {
     );
 
     if (response.data && response.data.statusCode === 200 && response.data.results) {
-      // Menyimpan data transaksi untuk digunakan nanti di checkpayment
       currentTransaction = {
         idtrx: response.data.results.idtrx,
         amount: response.data.results.amount,
