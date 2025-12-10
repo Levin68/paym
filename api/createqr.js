@@ -1,12 +1,12 @@
 import axios from 'axios';
 
-// Konfigurasi Zenitsu API
+// Konfigurasi Zenitsu API dengan username dan token yang diberikan
 const ZENITSU_CONFIG = {
-  username: 'vinzyy',  // Ganti dengan username orkut Anda
-  token: '1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh'     // Ganti dengan token orkut Anda
+  username: 'vinzyy',  // Username
+  token: '1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh'  // Token
 };
 
-// Global object untuk menyimpan data transaksi sementara
+// Global variable untuk menyimpan data transaksi
 let currentTransaction = null;  // Menyimpan transaksi yang sedang berjalan
 
 /**
