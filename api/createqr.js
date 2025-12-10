@@ -1,4 +1,3 @@
-// /api/createqr.js
 import axios from "axios";
 
 const ZENITSU_CONFIG = {
@@ -16,7 +15,7 @@ export default async function handler(req, res) {
   const { amount } = req.body;
   const numericAmount = Number(amount);
 
-  // amount bebas (1–100000000), yang penting angka > 0
+  // amount bebas (1 – 100000000++), yang penting angka > 0
   if (!amount || Number.isNaN(numericAmount) || numericAmount <= 0) {
     return res
       .status(400)
@@ -49,13 +48,14 @@ export default async function handler(req, res) {
 
     const r = response.data.results;
 
+    // struktur respons rapi buat frontend / cli
     return res.status(200).json({
       success: true,
       data: {
         idTransaksi: r.idtrx,
         amount: Number(r.amount),
         createdAt: r.createAt,
-        expired: r.expired,
+        expired: r.expired, // biarin string, frontend/cli yang parse Date
         qrUrl: r.url,
       },
     });
