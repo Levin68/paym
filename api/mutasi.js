@@ -23,36 +23,38 @@ async function checkPaymentStatusFromMutasi(idTransaksi, amount) {
 
     if (response.data && response.data.statusCode === 200 && response.data.results) {
       const mutasi = response.data.results;
-      
+
+      // Cek apakah transaksi ada dalam mutasi dalam 5 menit terakhir
       const now = new Date();
       const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
-      
+
       const payment = mutasi.find(transaction => {
         try {
           const [datePart, timePart] = transaction.tanggal.split(' ');
           const [day, month, year] = datePart.split('/');
           const transactionDate = new Date(`${year}-${month}-${day}T${timePart}:00`);
-          
+
           const isRecent = transactionDate >= fiveMinutesAgo;
           const isIncoming = transaction.status === 'IN';
-          
+
           const transactionAmount = parseInt(transaction.kredit.replace(/./g, ''));
           const amountMatch = transactionAmount === amount;
-          
+
+          // Cek apakah transaksi sesuai dengan ID dan jumlahnya
           return isRecent && isIncoming && amountMatch;
         } catch (e) {
           console.log('❌ Error parsing transaction:', e);
           return false;
         }
       });
-      
+
       if (payment) {
         return { status: 'paid', data: payment };
       } else {
         return { status: 'pending' };
       }
     }
-    
+
     return { status: 'error', message: 'Failed to fetch mutation data' };
   } catch (error) {
     console.error('❌ Error checking payment status from mutasi:', error.message);
@@ -99,4 +101,4 @@ export default async function handler(req, res) {
       error: 'Method Not Allowed'
     });
   }
-                           }
+}
