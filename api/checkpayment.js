@@ -38,11 +38,12 @@ export default async function handler(req, res) {
 
     const data = response.data;
 
-    // Log untuk debugging
-    console.log("[CHECKPAYMENT]", {
+    // Log FULL response untuk debugging
+    console.log("[CHECKPAYMENT-DEBUG]", {
       idTransaksi,
       statusCode: data?.statusCode,
-      results: data?.results
+      results: JSON.stringify(data?.results),
+      fullResponse: JSON.stringify(data)
     });
 
     if (!data) {
@@ -52,16 +53,27 @@ export default async function handler(req, res) {
       });
     }
 
-    // Validasi ketat untuk status PAID
+    // Cek status 200 = PAID
     if (data.statusCode === 200 && data.results) {
       const results = data.results;
       
-      // Pastikan ada bukti pembayaran
+      // Validasi SUPER KETAT - harus ada salah satu indikator paid
       const isPaid = 
-        results.status === "success" ||
         results.paid === true ||
-        results.paidAt ||
-        results.settlementTime;
+        results.status === "PAID" ||
+        results.status === "SUCCESS" ||
+        results.status === "success" ||
+        results.paymentStatus === "PAID" ||
+        results.settlementStatus === "settlement" ||
+        (results.transactionStatus && results.transactionStatus.toLowerCase() === "settlement") ||
+        !!results.paidAt ||
+        !!results.settlementTime;
+
+      console.log("[CHECKPAYMENT-VALIDATION]", {
+        idTransaksi,
+        isPaid,
+        results: JSON.stringify(results)
+      });
 
       if (isPaid) {
         return res.status(200).json({
@@ -73,22 +85,23 @@ export default async function handler(req, res) {
           }
         });
       } else {
-        // Status 200 tapi ga ada bukti paid - treat as pending
-        console.warn("[CHECKPAYMENT-SUSPICIOUS]", {
+        // Status 200 tapi ga ada bukti paid - FALSE POSITIVE!
+        console.warn("[CHECKPAYMENT-FALSE-POSITIVE]", {
           idTransaksi,
-          message: "Status 200 but no payment proof",
-          results
+          statusCode: data.statusCode,
+          results: JSON.stringify(results)
         });
         
         return res.status(200).json({
           success: true,
           paymentStatus: "Waiting for payment",
           data: results,
-          warning: "Status unclear"
+          warning: "Status 200 but no payment proof"
         });
       }
     }
 
+    // Status 202 = PENDING
     if (data.statusCode === 202) {
       return res.status(200).json({
         success: true,
@@ -106,7 +119,8 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error("[CHECKPAYMENT-ERROR]", {
       idTransaksi,
-      error: error.message
+      error: error.message,
+      response: error.response?.data
     });
 
     const status = error.response?.status;
