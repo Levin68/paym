@@ -5,6 +5,8 @@ const ZENITSU_CONFIG = {
   token: "1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh"
 };
 
+const VPS_WATCH_URL = "http://82.27.2.229:5021/watch-payment";
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method Not Allowed" });
@@ -36,6 +38,24 @@ export default async function handler(req, res) {
     }
 
     const r = response.data.results;
+
+    const payload = {
+      idTransaksi: r.idtrx,
+      amount: Number(r.amount),
+      createdAt: r.createAt,
+      expired: r.expired
+    };
+
+    try {
+      await axios.post(
+        VPS_WATCH_URL,
+        payload,
+        {
+          headers: { "Content-Type": "application/json" },
+          timeout: 5000
+        }
+      );
+    } catch (e) {}
 
     return res.status(200).json({
       success: true,
