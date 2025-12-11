@@ -36,32 +36,79 @@ export default async function handler(req, res) {
       }
     );
 
-    if (!response.data) {
-      return res.status(500).json({ success: false, error: "Empty response from provider" });
-    }
+    const data = response.data;
 
-    if (response.data.statusCode === 200 && response.data.results) {
-      return res.status(200).json({
-        success: true,
-        paymentStatus: "Payment successful",
-        data: response.data.results
+    // Log untuk debugging
+    console.log("[CHECKPAYMENT]", {
+      idTransaksi,
+      statusCode: data?.statusCode,
+      results: data?.results
+    });
+
+    if (!data) {
+      return res.status(500).json({ 
+        success: false, 
+        error: "Empty response from provider" 
       });
     }
 
-    if (response.data.statusCode === 202) {
+    // Validasi ketat untuk status PAID
+    if (data.statusCode === 200 && data.results) {
+      const results = data.results;
+      
+      // Pastikan ada bukti pembayaran
+      const isPaid = 
+        results.status === "success" ||
+        results.paid === true ||
+        results.paidAt ||
+        results.settlementTime;
+
+      if (isPaid) {
+        return res.status(200).json({
+          success: true,
+          paymentStatus: "Payment successful",
+          data: {
+            ...results,
+            paidAt: results.paidAt || results.settlementTime || new Date().toISOString()
+          }
+        });
+      } else {
+        // Status 200 tapi ga ada bukti paid - treat as pending
+        console.warn("[CHECKPAYMENT-SUSPICIOUS]", {
+          idTransaksi,
+          message: "Status 200 but no payment proof",
+          results
+        });
+        
+        return res.status(200).json({
+          success: true,
+          paymentStatus: "Waiting for payment",
+          data: results,
+          warning: "Status unclear"
+        });
+      }
+    }
+
+    if (data.statusCode === 202) {
       return res.status(200).json({
         success: true,
         paymentStatus: "Waiting for payment",
-        data: response.data.results || null
+        data: data.results || null
       });
     }
 
+    // Status lainnya
     return res.status(200).json({
       success: true,
       paymentStatus: "Waiting for payment",
-      raw: response.data
+      raw: data
     });
   } catch (error) {
+    console.error("[CHECKPAYMENT-ERROR]", {
+      idTransaksi,
+      error: error.message
+    });
+
     const status = error.response?.status;
     const data = error.response?.data;
     return res.status(status || 500).json({
