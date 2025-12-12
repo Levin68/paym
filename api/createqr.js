@@ -2,17 +2,30 @@ import axios from "axios";
 
 const ZENITSU_CONFIG = {
   username: "vinzyy",
-  token: "1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh"
+  token: "1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh",
 };
 
 const VPS_WATCH_URL = "http://82.27.2.229:5021/watch-payment";
 
+function setCors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
 export default async function handler(req, res) {
+  setCors(res);
+
+  // penting buat browser (preflight)
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method Not Allowed" });
   }
 
-  const { amount } = req.body;
+  const { amount } = req.body || {};
   const numericAmount = Number(amount);
 
   if (!amount || Number.isNaN(numericAmount) || numericAmount <= 0) {
@@ -25,11 +38,11 @@ export default async function handler(req, res) {
       {
         username: ZENITSU_CONFIG.username,
         token: ZENITSU_CONFIG.token,
-        amount: numericAmount.toString()
+        amount: numericAmount.toString(),
       },
       {
         headers: { "Content-Type": "application/json" },
-        timeout: 10000
+        timeout: 10000,
       }
     );
 
@@ -43,19 +56,16 @@ export default async function handler(req, res) {
       idTransaksi: r.idtrx,
       amount: Number(r.amount),
       createdAt: r.createAt,
-      expired: r.expired
+      expired: r.expired,
     };
 
-    try {
-      await axios.post(
-        VPS_WATCH_URL,
-        payload,
-        {
-          headers: { "Content-Type": "application/json" },
-          timeout: 5000
-        }
-      );
-    } catch (e) {}
+    // fire-and-forget watcher VPS
+    axios
+      .post(VPS_WATCH_URL, payload, {
+        headers: { "Content-Type": "application/json" },
+        timeout: 5000,
+      })
+      .catch(() => {});
 
     return res.status(200).json({
       success: true,
@@ -64,10 +74,14 @@ export default async function handler(req, res) {
         amount: Number(r.amount),
         createdAt: r.createAt,
         expired: r.expired,
-        qrUrl: r.url
-      }
+        qrUrl: r.url,
+      },
     });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+      provider: err.response?.data || null,
+    });
   }
 }
