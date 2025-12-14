@@ -1,9 +1,0 @@
-{
-  "rewrites": [
-    { "source": "/createqr", "destination": "http://82.27.2.229:5021/createqr" },
-    { "source": "/status/:id", "destination": "http://82.27.2.229:5021/status/:id" },
-    { "source": "/watch-payment", "destination": "http://82.27.2.229:5021/watch-payment" },
-    { "source": "/presets", "destination": "http://82.27.2.229:5021/presets" },
-    { "source": "/health", "destination": "http://82.27.2.229:5021/health" }
-  ]
-}
