@@ -1,10 +1,5 @@
 import axios from "axios";
 
-const ZENITSU_CONFIG = {
-  username: "vinzyy",
-  token: "1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh",
-};
-
 const VPS_WATCH_URL = "http://82.27.2.229:5021/watch-payment";
 
 function setCors(res) {
@@ -15,15 +10,11 @@ function setCors(res) {
 
 export default async function handler(req, res) {
   setCors(res);
-
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") {
-    return res.status(405).json({ success: false, error: "Method Not Allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ success: false, error: "Method Not Allowed" });
 
   const { amount } = req.body || {};
   const numericAmount = Number(amount);
-
   if (!amount || Number.isNaN(numericAmount) || numericAmount <= 0) {
     return res.status(400).json({ success: false, error: "Invalid amount" });
   }
@@ -32,53 +23,39 @@ export default async function handler(req, res) {
     const response = await axios.post(
       "https://api.zenitsu.web.id/api/orkut/createqr",
       {
-        username: ZENITSU_CONFIG.username,
-        token: ZENITSU_CONFIG.token,
+        username: process.env.ZENITSU_USERNAME,
+        token: process.env.ZENITSU_TOKEN,
         amount: String(numericAmount),
       },
-      { headers: { "Content-Type": "application/json" }, timeout: 15000 }
+      { headers: { "Content-Type": "application/json" }, timeout: 10000 }
     );
 
-    if (!response.data || response.data.statusCode !== 200 || !response.data.results) {
-      return res.status(500).json({ success: false, error: "Failed to generate QR" });
+    const r = response.data?.results;
+    if (!r?.idtrx || !r?.amount || !(r?.createAt || r?.createdAt) || !r?.url) {
+      return res.status(500).json({ success: false, error: "createqr invalid response", provider: response.data });
     }
 
-    const r = response.data.results;
+    const createdAt = r.createAt || r.createdAt;
 
-    const payload = {
-      idTransaksi: r.idtrx,
-      amount: Number(r.amount),
-      createdAt: r.createAt,
-      expired: r.expired,
-    };
-
-    // start watcher di VPS (INI yang bikin VPS polling)
-    let watcherStarted = false;
-    let watcherResp = null;
-
-    try {
-      const w = await axios.post(VPS_WATCH_URL, payload, {
-        headers: { "Content-Type": "application/json" },
-        timeout: 8000,
-        validateStatus: () => true,
-      });
-
-      watcherResp = { http: w.status, data: w.data };
-      watcherStarted = w.status === 200 && (w.data?.success === true || w.data?.started === true);
-    } catch (e) {
-      watcherResp = { error: e.message };
-      watcherStarted = false;
-    }
+    // ✅ start watcher di VPS (ini yang bikin polling jalan)
+    await axios.post(
+      VPS_WATCH_URL,
+      {
+        idTransaksi: r.idtrx,
+        amount: Number(r.amount),
+        createdAt,
+        expired: r.expired || null,
+      },
+      { headers: { "Content-Type": "application/json" }, timeout: 7000 }
+    );
 
     return res.status(200).json({
       success: true,
-      watcherStarted,
-      watcherResp,
       data: {
         idTransaksi: r.idtrx,
         amount: Number(r.amount),
-        createdAt: r.createAt,
-        expired: r.expired,
+        createdAt,
+        expired: r.expired || null,
         qrUrl: r.url,
       },
     });
