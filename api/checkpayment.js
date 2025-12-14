@@ -1,4 +1,5 @@
 import axios from "axios";
+export { default } from "./api/status.js";
 
 const ZENITSU_CONFIG = {
   username: "vinzyy",
