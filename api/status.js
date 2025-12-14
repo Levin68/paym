@@ -1,17 +1,19 @@
-const axios = require("axios");
+import axios from "axios";
 
 const VPS_BASE = "http://82.27.2.229:5021";
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-device-id");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   setCors(res);
+
   if (req.method === "OPTIONS") return res.status(200).end();
 
+  // ambil id dari query (GET) atau body (POST)
   const idTransaksi =
     (req.query && req.query.idTransaksi) ||
     (req.body && req.body.idTransaksi);
@@ -22,7 +24,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const r = await axios.get(
-      `${VPS_BASE}/api/status/${encodeURIComponent(idTransaksi)}`,
+      `${VPS_BASE}/status/${encodeURIComponent(idTransaksi)}`,
       { timeout: 8000 }
     );
     return res.status(200).json(r.data);
@@ -33,4 +35,4 @@ module.exports = async function handler(req, res) {
       provider: e.response?.data || null,
     });
   }
-};
+}
