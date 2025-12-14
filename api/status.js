@@ -10,29 +10,30 @@ function setCors(res) {
 
 export default async function handler(req, res) {
   setCors(res);
-
   if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "GET") {
+    return res.status(405).json({ success: false, error: "Method not allowed" });
+  }
 
-  // ambil id dari query (GET) atau body (POST)
-  const idTransaksi =
-    (req.query && req.query.idTransaksi) ||
-    (req.body && req.body.idTransaksi);
-
+  const idTransaksi = String(req.query?.idTransaksi || "").trim();
   if (!idTransaksi) {
     return res.status(400).json({ success: false, error: "idTransaksi required" });
   }
 
   try {
-    const r = await axios.get(
-      `${VPS_BASE}/status/${encodeURIComponent(idTransaksi)}`,
-      { timeout: 8000 }
-    );
-    return res.status(200).json(r.data);
+    const r = await axios.get(`${VPS_BASE}/status`, {
+      params: { idTransaksi },
+      timeout: 8000,
+      validateStatus: () => true,
+    });
+
+    // terusin response dari VPS apa adanya
+    return res.status(r.status).json(r.data);
   } catch (e) {
-    return res.status(e.response?.status || 500).json({
+    return res.status(502).json({
       success: false,
-      error: e.message,
-      provider: e.response?.data || null,
+      error: "Proxy to VPS failed",
+      message: e.message,
     });
   }
 }
