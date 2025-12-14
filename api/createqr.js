@@ -1,5 +1,8 @@
 import axios from "axios";
 
+const ZENITSU_USERNAME = "vinzyy";
+const ZENITSU_TOKEN = "1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh";
+
 const VPS_WATCH_URL = "http://82.27.2.229:5021/watch-payment";
 
 function setCors(res) {
@@ -23,8 +26,8 @@ export default async function handler(req, res) {
     const response = await axios.post(
       "https://api.zenitsu.web.id/api/orkut/createqr",
       {
-        username: process.env.ZENITSU_USERNAME,
-        token: process.env.ZENITSU_TOKEN,
+        username: ZENITSU_USERNAME,
+        token: ZENITSU_TOKEN,
         amount: String(numericAmount),
       },
       { headers: { "Content-Type": "application/json" }, timeout: 10000 }
@@ -37,7 +40,7 @@ export default async function handler(req, res) {
 
     const createdAt = r.createAt || r.createdAt;
 
-    // ✅ start watcher di VPS (ini yang bikin polling jalan)
+    // ✅ nyalain watcher VPS
     await axios.post(
       VPS_WATCH_URL,
       {
