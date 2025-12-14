@@ -1,24 +1,26 @@
-import axios from "axios";
+const axios = require("axios");
 
 const ZENITSU_CONFIG = {
-  username: "vinzyy",
-  token: "1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh",
+  username: process.env.ZENITSU_USERNAME || "vinzyy",
+  token: process.env.ZENITSU_TOKEN || "1331927:cCVk0A4be8WL2ONriangdHJvU7utmfTh", // set di Vercel Env biar aman
 };
 
-const VPS_WATCH_URL = "http://82.27.2.229:5021/watch-payment";
+const VPS_BASE = "http://82.27.2.229:5021";
+const VPS_WATCH_URL = `${VPS_BASE}/api/watch-payment`;
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-device-id");
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   setCors(res);
 
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST")
+  if (req.method !== "POST") {
     return res.status(405).json({ success: false, error: "Method Not Allowed" });
+  }
 
   const { amount } = req.body || {};
   const numericAmount = Number(amount);
@@ -27,17 +29,21 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, error: "Invalid amount" });
   }
 
+  if (!ZENITSU_CONFIG.token) {
+    return res.status(500).json({ success: false, error: "ZENITSU_TOKEN is not set" });
+  }
+
   try {
     const response = await axios.post(
       "https://api.zenitsu.web.id/api/orkut/createqr",
       {
         username: ZENITSU_CONFIG.username,
         token: ZENITSU_CONFIG.token,
-        amount: numericAmount.toString(),
+        amount: String(numericAmount),
       },
       {
         headers: { "Content-Type": "application/json" },
-        timeout: 10000,
+        timeout: 15000,
       }
     );
 
@@ -54,16 +60,15 @@ export default async function handler(req, res) {
       expired: r.expired,
     };
 
-    // ✅ WAJIB: tunggu sebentar supaya request ke VPS bener-bener kekirim
     let watcherStarted = false;
     try {
       await axios.post(VPS_WATCH_URL, payload, {
         headers: { "Content-Type": "application/json" },
-        timeout: 5000,
+        timeout: 8000,
         validateStatus: () => true,
       });
       watcherStarted = true;
-    } catch (e) {
+    } catch {
       watcherStarted = false;
     }
 
@@ -79,10 +84,10 @@ export default async function handler(req, res) {
       },
     });
   } catch (err) {
-    return res.status(500).json({
+    return res.status(err.response?.status || 500).json({
       success: false,
       error: err.message,
       provider: err.response?.data || null,
     });
   }
-}
+};
