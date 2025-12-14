@@ -1,19 +1,18 @@
-const axios = require("axios");
+import axios from "axios";
 
 const VPS_BASE = "http://82.27.2.229:5021";
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, x-device-id");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   setCors(res);
-
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") {
-    return res.status(405).json({ success: false, error: "Method Not Allowed" });
+    return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   const idTransaksi =
@@ -25,11 +24,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const r = await axios.post(
-      `${VPS_BASE}/api/cancel/${encodeURIComponent(idTransaksi)}`,
-      {},
-      { timeout: 8000 }
-    );
+    const r = await axios.post(`${VPS_BASE}/cancel`, { idTransaksi }, { timeout: 8000 });
     return res.status(200).json(r.data);
   } catch (e) {
     return res.status(e.response?.status || 500).json({
@@ -38,4 +33,4 @@ module.exports = async function handler(req, res) {
       provider: e.response?.data || null,
     });
   }
-};
+}
