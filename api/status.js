@@ -1,5 +1,6 @@
 // api/status.js
 import axios from "axios";
+export { default } from "./checkpayment.js";
 
 const VPS_BASE = "http://82.27.2.229:5021";
 
