@@ -1,52 +1,30 @@
-// api/orkut.js (Vercel Serverless Function - CommonJS)
+const axios = require("axios");
 
-const VPS_BASE = "http://82.27.2.229:5021"; // IP VPS lu (HTTP)
-const DEFAULT_THEME = "theme2";
+const VPS_BASE = "http://82.27.2.229:5021"; // IP VPS lu (82...)
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.setHeader("Cache-Control", "no-store");
 }
 
-function safeJsonParse(s) {
-  try { return JSON.parse(s); } catch { return null; }
+function cleanBase(u) {
+  return String(u || "").replace(/\/+$/, "");
 }
 
-async function vpsFetch(path, { method = "GET", body = null, headers = {} } = {}) {
-  const url = `${VPS_BASE}${path}`;
-  const init = {
+async function proxyJson({ method, url, data }) {
+  const r = await axios({
     method,
-    headers: {
-      ...(body ? { "Content-Type": "application/json" } : {}),
-      ...headers
-    }
-  };
-  if (body) init.body = JSON.stringify(body);
+    url,
+    data,
+    timeout: 15000,
+    validateStatus: () => true,
+    headers: { "Content-Type": "application/json" },
+  });
 
-  const r = await fetch(url, init);
-  const contentType = r.headers.get("content-type") || "";
-
-  // image/png streaming
-  if (contentType.includes("image/")) {
-    const ab = await r.arrayBuffer();
-    return {
-      ok: r.ok,
-      status: r.status,
-      contentType,
-      buffer: Buffer.from(ab)
-    };
-  }
-
-  const text = await r.text();
-  const json = safeJsonParse(text);
   return {
-    ok: r.ok,
     status: r.status,
-    contentType,
-    text,
-    json
+    data: r.data,
   };
 }
 
@@ -54,98 +32,91 @@ module.exports = async (req, res) => {
   setCors(res);
   if (req.method === "OPTIONS") return res.status(200).end();
 
+  const base = cleanBase(VPS_BASE);
+  const action = String(req.query?.action || req.body?.action || "").toLowerCase();
+
+  // health
+  if (!action) {
+    return res.status(200).json({
+      ok: true,
+      service: "levpay-vercel-proxy",
+      vps: base,
+      hint: "pakai ?action=createqr|status|cancel",
+    });
+  }
+
   try {
-    // health
-    if (req.method === "GET" && (!req.query || !req.query.op)) {
-      return res.status(200).json({
-        ok: true,
-        service: "levpay-vercel-proxy",
-        vps: VPS_BASE
+    // CREATE QR (proxy ke VPS)
+    if (action === "createqr") {
+      if (req.method !== "POST") {
+        return res.status(405).json({ success: false, error: "Method Not Allowed" });
+      }
+
+      const amount = Number(req.body?.amount);
+      const theme = req.body?.theme === "theme2" ? "theme2" : "theme1";
+
+      if (!Number.isFinite(amount) || amount < 1) {
+        return res.status(400).json({ success: false, error: "amount invalid" });
+      }
+
+      const out = await proxyJson({
+        method: "POST",
+        url: `${base}/api/createqr`,
+        data: { amount, theme },
       });
+
+      return res.status(out.status).json(out.data);
     }
 
-    const op = (req.query?.op || req.body?.op || "").toString().toLowerCase().trim();
-
-    // ====== GET STATUS ======
-    if (req.method === "GET" && op === "status") {
-      const idTransaksi = (req.query?.idTransaksi || "").toString().trim();
-      if (!idTransaksi) return res.status(400).json({ success: false, error: "idTransaksi required" });
-
-      const out = await vpsFetch(`/api/status?idTransaksi=${encodeURIComponent(idTransaksi)}`);
-      if (!out.ok) {
-        return res.status(out.status).json(out.json || { success: false, error: out.text || "VPS error" });
-      }
-      return res.status(200).json(out.json || { success: true, raw: out.text });
-    }
-
-    // ====== GET QR PNG (proxy image) ======
-    if (req.method === "GET" && op === "qr") {
-      const file = (req.query?.file || "").toString().trim(); // ex: LEVPAY-12345.png
-      if (!file) return res.status(400).send("file required");
-
-      const out = await vpsFetch(`/api/qr/${encodeURIComponent(file)}`);
-      if (!out.ok) return res.status(out.status).send("not found");
-
-      res.setHeader("Content-Type", out.contentType || "image/png");
-      return res.status(200).send(out.buffer);
-    }
-
-    // ====== POST CREATEQR / CANCEL ======
-    if (req.method === "POST") {
-      // CREATE QR
-      if (op === "createqr") {
-        const amount = Number(req.body?.amount);
-        const theme = (req.body?.theme || DEFAULT_THEME).toString();
-
-        if (!Number.isFinite(amount) || amount < 1) {
-          return res.status(400).json({ success: false, error: "amount invalid" });
-        }
-
-        const out = await vpsFetch(`/api/createqr`, {
-          method: "POST",
-          body: { amount, theme }
-        });
-
-        if (!out.ok) {
-          return res.status(out.status).json(out.json || { success: false, error: out.text || "VPS error" });
-        }
-
-        // rewrite qrPngUrl dari VPS -> jadi lewat proxy Vercel biar aman dari mixed-content
-        const payload = out.json || {};
-        const data = payload?.data;
-        if (data?.idTransaksi) {
-          const file = `${data.idTransaksi}.png`;
-          data.qrPngUrl = `/api/orkut?op=qr&file=${encodeURIComponent(file)}`;
-        }
-
-        return res.status(200).json(payload);
+    // STATUS (proxy ke VPS)
+    if (action === "status") {
+      if (req.method !== "GET") {
+        return res.status(405).json({ success: false, error: "Method Not Allowed" });
       }
 
-      // CANCEL
-      if (op === "cancel") {
-        const idTransaksi = (req.body?.idTransaksi || "").toString().trim();
-        if (!idTransaksi) return res.status(400).json({ success: false, error: "idTransaksi required" });
-
-        const out = await vpsFetch(`/api/cancel`, {
-          method: "POST",
-          body: { idTransaksi }
-        });
-
-        if (!out.ok) {
-          return res.status(out.status).json(out.json || { success: false, error: out.text || "VPS error" });
-        }
-        return res.status(200).json(out.json || { success: true, raw: out.text });
+      const idTransaksi = String(req.query?.idTransaksi || "").trim();
+      if (!idTransaksi) {
+        return res.status(400).json({ success: false, error: "idTransaksi required" });
       }
 
-      return res.status(400).json({
-        success: false,
-        error: "Invalid op",
-        hint: "Use op=createqr|cancel in JSON body"
+      const out = await proxyJson({
+        method: "GET",
+        url: `${base}/api/status?idTransaksi=${encodeURIComponent(idTransaksi)}`,
       });
+
+      return res.status(out.status).json(out.data);
     }
 
-    return res.status(405).json({ success: false, error: "Method Not Allowed" });
+    // CANCEL (proxy ke VPS)
+    if (action === "cancel") {
+      if (req.method !== "POST") {
+        return res.status(405).json({ success: false, error: "Method Not Allowed" });
+      }
+
+      const idTransaksi = String(req.body?.idTransaksi || "").trim();
+      if (!idTransaksi) {
+        return res.status(400).json({ success: false, error: "idTransaksi required" });
+      }
+
+      const out = await proxyJson({
+        method: "POST",
+        url: `${base}/api/cancel`,
+        data: { idTransaksi },
+      });
+
+      return res.status(out.status).json(out.data);
+    }
+
+    return res.status(400).json({
+      success: false,
+      error: "Unknown action",
+      allowed: ["createqr", "status", "cancel"],
+    });
   } catch (e) {
-    return res.status(500).json({ success: false, error: e.message || "server error" });
+    return res.status(500).json({
+      success: false,
+      error: e.message,
+      note: "Kalau ini kena, biasanya VPS gak kebuka port 5021 / firewall / app VPS mati",
+    });
   }
 };
